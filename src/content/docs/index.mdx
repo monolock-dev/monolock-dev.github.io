@@ -17,7 +17,7 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 ```sh
 docker run -p 7070:7070 ghcr.io/monolock-dev/monolock
@@ -53,4 +53,27 @@ docker run -p 7070:7070 ghcr.io/monolock-dev/monolock
 		A single point of coordination — no replication, no quorum, no
 		consensus. Know exactly what you get, and what you don't.
 	</Card>
+</CardGrid>
+
+## How it compares
+
+Honest side-by-side comparisons with the locks you already know — including
+the rows monolock loses.
+
+<CardGrid>
+	<LinkCard
+		title="vs Redis & Redlock"
+		href="/comparisons/redis/"
+		description="TTL keys vs connection-scoped ownership, and the Kleppmann–antirez fencing debate."
+	/>
+	<LinkCard
+		title="vs Postgres advisory locks"
+		href="/comparisons/postgres-advisory-locks/"
+		description="The closest relative: what a dedicated lock server adds over pg_advisory_lock."
+	/>
+	<LinkCard
+		title="vs etcd"
+		href="/comparisons/etcd/"
+		description="What consensus buys, what it costs, and when a single server is enough."
+	/>
 </CardGrid>

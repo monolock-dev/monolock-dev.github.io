@@ -48,6 +48,17 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Comparisons',
+					items: [
+						{ label: 'vs Redis & Redlock', slug: 'comparisons/redis' },
+						{
+							label: 'vs Postgres advisory locks',
+							slug: 'comparisons/postgres-advisory-locks',
+						},
+						{ label: 'vs etcd', slug: 'comparisons/etcd' },
+					],
+				},
+				{
 					label: 'Operations',
 					items: [
 						{ label: 'Configuration', slug: 'operations/configuration' },
