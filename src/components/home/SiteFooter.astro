@@ -1,0 +1,94 @@
+---
+import monolockDark from '../../assets/monolock-dark.png';
+---
+
+<footer>
+	<div class="wrap grid">
+		<div>
+			<img src={monolockDark.src} alt="monolock" />
+			<div class="tagline">A distributed mutex without the distributed system.</div>
+		</div>
+		<div class="col">
+			<div class="eyebrow-sm head">Start here</div>
+			<a href="/start/introduction/">Introduction</a>
+			<a href="/start/quickstart/">Quick start</a>
+		</div>
+		<div class="col">
+			<div class="eyebrow-sm head">Concepts</div>
+			<a href="/concepts/how-it-works/">How it works</a>
+			<a href="/concepts/fencing-tokens/">Fencing tokens</a>
+			<a href="/concepts/capacity/">Capacity &amp; limits</a>
+		</div>
+		<div class="col">
+			<div class="eyebrow-sm head">Operations</div>
+			<a href="/operations/configuration/">Configuration</a>
+			<a href="/operations/tls/">TLS &amp; mTLS</a>
+			<a href="/operations/observability/">Observability</a>
+			<a href="/operations/deployment/">Deployment</a>
+		</div>
+		<div class="col">
+			<div class="eyebrow-sm head">Reference</div>
+			<a href="/reference/protocol/">Wire protocol</a>
+			<a href="/reference/errors/">Error codes</a>
+			<a href="/clients/go/">Go client</a>
+			<a href="https://github.com/monolock-dev/monolock">GitHub</a>
+		</div>
+	</div>
+</footer>
+
+<style>
+	footer {
+		border-top: 1px solid var(--gutter);
+	}
+
+	.grid {
+		padding-block: 56px 32px;
+		display: grid;
+		grid-template-columns: 1.4fr repeat(4, 1fr);
+		gap: 40px;
+	}
+
+	img {
+		display: block;
+		height: 20px;
+		width: auto;
+	}
+
+	.tagline {
+		font-size: 14px;
+		line-height: 1.5;
+		color: var(--text-small);
+		margin-top: 12px;
+		max-width: 28ch;
+	}
+
+	.col {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.head {
+		letter-spacing: 0.14em;
+		margin-bottom: 4px;
+	}
+
+	.col a {
+		font-size: 14px;
+		color: var(--text-muted);
+	}
+
+	.col a:hover {
+		color: var(--accent);
+	}
+
+	@media (max-width: 920px) {
+		.grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.grid > div:first-child {
+			grid-column: 1 / -1;
+		}
+	}
+</style>

@@ -1,0 +1,206 @@
+---
+// The `Do` example from clients/go.md, trimmed to 15 lines; highlight colors
+// come from the design tokens. Built as a string because Go braces would be
+// parsed as expressions in Astro template markup.
+const code = `<span class="kw">import</span> monolock <span class="str">"github.com/monolock-dev/monolock-go"</span>
+
+c := monolock.<span class="fn">New</span>(monolock.Config{Address: <span class="str">"127.0.0.1:7070"</span>})
+
+err := c.<span class="fn">Do</span>(ctx, <span class="str">"nightly-import"</span>, <span class="num">2</span>*time.Second,
+    <span class="kw">func</span>(ctx context.Context, token <span class="kw">uint64</span>) <span class="kw">error</span> {
+        <span class="kw">for</span> {
+            <span class="kw">select</span> {
+            <span class="kw">case</span> &lt;-ctx.Done():
+                <span class="kw">return nil</span> <span class="cm">// the lock is gone; Do reports why</span>
+            <span class="kw">case</span> job := &lt;-jobs:
+                <span class="kw">if</span> err := process(ctx, job, token); err != <span class="kw">nil</span> {
+                    <span class="kw">return</span> err
+                }
+            }
+        }
+    })`;
+---
+
+<section class="taking">
+	<div class="wrap">
+		<div class="head">
+			<div>
+				<div class="eyebrow eb">In your code</div>
+				<h2>Taking a lock</h2>
+			</div>
+			<div class="install">go get github.com/monolock-dev/monolock-go</div>
+		</div>
+
+		<div class="cols">
+			<div class="panel">
+				<div class="tabs">
+					<span class="file">worker.go</span>
+					<span class="eyebrow-sm">Go client</span>
+				</div>
+				<pre set:html={code} />
+			</div>
+
+			<div class="notes">
+				<div class="note">
+					<div class="term">Do</div>
+					<div class="text">
+						Blocks until this process owns the lock, runs your function for exactly as long as the
+						server keeps confirming ownership, and releases it on the way out.
+					</div>
+				</div>
+				<div class="note">
+					<div class="term">token</div>
+					<div class="text">
+						The fencing token of this grant. Hand it to the resource the lock guards with every
+						write, and have the resource reject anything smaller.
+					</div>
+				</div>
+				<div class="note">
+					<div class="term">ctx</div>
+					<div class="text">
+						Cancelled the moment ownership stops being confirmed. Ownership ends, work must stop.
+					</div>
+				</div>
+				<div class="note">
+					<div class="term">DoRetry</div>
+					<div class="text">
+						Same, with exponential backoff and jitter built in. <a href="/clients/go/"
+							>Go client docs →</a
+						>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.taking {
+		border-top: 1px solid var(--gutter);
+	}
+
+	.wrap {
+		padding-block: 88px;
+	}
+
+	.head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 20px;
+		margin-bottom: 40px;
+	}
+
+	.eb {
+		margin-bottom: 22px;
+	}
+
+	h2 {
+		margin: 0;
+		font-size: clamp(30px, 3.4vw, 42px);
+		line-height: 1.08;
+		letter-spacing: -0.03em;
+		font-weight: 600;
+	}
+
+	.install {
+		font-family: var(--mono);
+		font-size: 13px;
+		color: var(--text-small);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 10px 14px;
+	}
+
+	.cols {
+		display: grid;
+		grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.55fr);
+		gap: 40px;
+		align-items: start;
+	}
+
+	.tabs {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+		padding: 10px 16px;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.file {
+		font-family: var(--mono);
+		font-size: 12px;
+		color: var(--text);
+	}
+
+	pre {
+		margin: 0;
+		padding: 22px 20px;
+		font-family: var(--mono);
+		font-size: 13.5px;
+		line-height: 1.75;
+		color: var(--text-bright);
+		overflow-x: auto;
+		/* JetBrains Mono otherwise renders <- as an arrow and != as ≠ */
+		font-variant-ligatures: none;
+	}
+
+	pre :global(.kw) {
+		color: var(--code-keyword);
+	}
+
+	pre :global(.str) {
+		color: var(--code-string);
+	}
+
+	pre :global(.num) {
+		color: var(--code-number);
+	}
+
+	pre :global(.cm) {
+		color: var(--code-comment);
+	}
+
+	pre :global(.fn) {
+		color: var(--accent);
+	}
+
+	.notes {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		background: var(--gutter);
+		border: 1px solid var(--gutter);
+		border-radius: 8px;
+		overflow: hidden;
+	}
+
+	.note {
+		background: var(--band);
+		padding: 18px;
+	}
+
+	.term {
+		font-family: var(--mono);
+		font-size: 12.5px;
+		color: var(--accent);
+		margin-bottom: 7px;
+	}
+
+	.text {
+		font-size: 14.5px;
+		line-height: 1.5;
+		color: var(--text-muted);
+	}
+
+	@media (max-width: 920px) {
+		.wrap {
+			padding-block: 64px;
+		}
+
+		.cols {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+</style>

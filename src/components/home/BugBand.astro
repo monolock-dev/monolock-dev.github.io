@@ -1,0 +1,74 @@
+<section class="bugs">
+	<div class="wrap">
+		<h2>This design removes a whole class of client bugs.</h2>
+		<div class="grid">
+			<div class="item">
+				<div class="title">No release call to forget</div>
+				<div class="body">The lock is released whenever your function returns — or panics.</div>
+			</div>
+			<div class="item">
+				<div class="title">No session id to persist and lose</div>
+				<div class="body">The connection is the session. Nothing to store, nothing to leak.</div>
+			</div>
+			<div class="item">
+				<div class="title">No lock without a live process</div>
+				<div class="body">If the process dies, the kernel closes the socket, and the lock moves on.</div>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.bugs {
+		border-top: 1px solid var(--gutter);
+		background: var(--band);
+	}
+
+	.wrap {
+		padding-block: 76px;
+	}
+
+	h2 {
+		margin: 0 0 44px;
+		font-size: clamp(24px, 2.6vw, 32px);
+		line-height: 1.15;
+		letter-spacing: -0.025em;
+		font-weight: 600;
+		max-width: 24ch;
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 44px;
+	}
+
+	.item {
+		border-top: 1px solid var(--accent);
+		padding-top: 18px;
+	}
+
+	.title {
+		font-size: 18px;
+		font-weight: 600;
+		letter-spacing: -0.015em;
+		margin-bottom: 8px;
+	}
+
+	.body {
+		font-size: 15.5px;
+		line-height: 1.55;
+		color: var(--text-small);
+	}
+
+	@media (max-width: 920px) {
+		.wrap {
+			padding-block: 56px;
+		}
+
+		.grid {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 32px;
+		}
+	}
+</style>

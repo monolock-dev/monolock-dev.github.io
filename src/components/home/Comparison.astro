@@ -1,0 +1,230 @@
+<section class="compare">
+	<div class="wrap">
+		<div class="eyebrow eb">How it compares</div>
+		<h2>Including the rows monolock loses</h2>
+		<p class="lead">Honest side-by-side comparisons with the locks you already know.</p>
+
+		<div class="scroller">
+			<table>
+				<thead>
+					<tr>
+						<th class="label"></th>
+						<th class="ml">monolock</th>
+						<th>Redis / Redlock</th>
+						<th>Postgres advisory</th>
+						<th>etcd</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td class="label">Ownership</td>
+						<td class="ml">connection-scoped</td>
+						<td>TTL key, renewed</td>
+						<td>session-scoped</td>
+						<td>lease + keepalive</td>
+					</tr>
+					<tr>
+						<td class="label">Release</td>
+						<td class="ml">closing the connection</td>
+						<td>explicit, owner-checked</td>
+						<td>unlock or disconnect</td>
+						<td>explicit, lease revoke</td>
+					</tr>
+					<tr>
+						<td class="label">Fencing token</td>
+						<td class="ml">every grant</td>
+						<td>none — the Redlock debate</td>
+						<td>none</td>
+						<td>revision numbers</td>
+					</tr>
+					<tr>
+						<td class="label">Waiters</td>
+						<td class="ml">FIFO queue, pushed</td>
+						<td>retry loops, no order</td>
+						<td>blocking wait</td>
+						<td>watch on a prefix</td>
+					</tr>
+					<tr>
+						<td class="label">Survives losing its node</td>
+						<td class="ml loses"><span class="x">✗ </span>no replication</td>
+						<td>with replicas, contested</td>
+						<td>with HA Postgres</td>
+						<td class="wins">✓ quorum</td>
+					</tr>
+					<tr>
+						<td class="label">What you operate</td>
+						<td class="ml">one static binary, one port</td>
+						<td>a server — or five for Redlock</td>
+						<td>a database, and its HA setup</td>
+						<td>a 3–5 node cluster to keep healthy</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+
+		<div class="cards">
+			<a href="/comparisons/redis/">
+				<div class="title">vs Redis &amp; Redlock</div>
+				<div class="desc">
+					TTL keys vs connection-scoped ownership, and the Kleppmann–antirez fencing debate.
+				</div>
+			</a>
+			<a href="/comparisons/postgres-advisory-locks/">
+				<div class="title">vs Postgres advisory locks</div>
+				<div class="desc">
+					The closest relative: what a dedicated lock server adds over pg_advisory_lock.
+				</div>
+			</a>
+			<a href="/comparisons/etcd/">
+				<div class="title">vs etcd</div>
+				<div class="desc">What consensus buys, what it costs, and when a single server is enough.</div>
+			</a>
+		</div>
+	</div>
+</section>
+
+<style>
+	.compare {
+		border-top: 1px solid var(--gutter);
+		background: var(--band);
+	}
+
+	.wrap {
+		padding-block: 88px;
+	}
+
+	.eb {
+		margin-bottom: 22px;
+	}
+
+	h2 {
+		margin: 0;
+		font-size: clamp(30px, 3.4vw, 42px);
+		line-height: 1.08;
+		letter-spacing: -0.03em;
+		font-weight: 600;
+		max-width: 20ch;
+	}
+
+	.lead {
+		margin: 20px 0 44px;
+		font-size: 17.5px;
+		line-height: 1.6;
+		color: var(--text-muted);
+		max-width: 58ch;
+	}
+
+	.scroller {
+		overflow-x: auto;
+	}
+
+	table {
+		width: 100%;
+		min-width: 860px;
+		font-size: 14.5px;
+	}
+
+	th {
+		text-align: left;
+		padding: 0 16px 14px;
+		border-bottom: 1px solid var(--border-strong);
+		font-family: var(--mono);
+		font-size: 13px;
+		font-weight: 400;
+		color: var(--text-muted);
+	}
+
+	th.label {
+		width: 22%;
+		padding-left: 0;
+	}
+
+	th:last-child {
+		padding-right: 0;
+	}
+
+	th.ml {
+		font-weight: 500;
+		color: var(--accent);
+		border-bottom-color: var(--accent);
+		background: var(--tint-column);
+	}
+
+	td {
+		padding: 15px 16px;
+		color: var(--text-small);
+		border-bottom: 1px solid var(--hairline);
+	}
+
+	td.label {
+		padding-left: 0;
+		color: var(--text-dim);
+	}
+
+	td:last-child {
+		padding-right: 0;
+	}
+
+	td.ml {
+		color: var(--text);
+		background: var(--tint-column);
+	}
+
+	td.ml.loses {
+		color: var(--text-body);
+	}
+
+	td.ml .x {
+		color: var(--text-dimmest);
+	}
+
+	td.wins {
+		color: var(--text-bright);
+	}
+
+	tr:last-child td {
+		border-bottom: 0;
+	}
+
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 16px;
+		margin-top: 36px;
+	}
+
+	.cards a {
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 20px;
+		color: var(--text);
+	}
+
+	.cards a:hover {
+		border-color: var(--accent);
+		color: var(--text);
+	}
+
+	.title {
+		font-size: 16.5px;
+		font-weight: 600;
+		letter-spacing: -0.015em;
+	}
+
+	.desc {
+		font-size: 14px;
+		line-height: 1.5;
+		color: var(--text-small);
+		margin-top: 6px;
+	}
+
+	@media (max-width: 920px) {
+		.wrap {
+			padding-block: 64px;
+		}
+
+		.cards {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+</style>

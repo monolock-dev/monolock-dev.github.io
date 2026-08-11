@@ -1,0 +1,53 @@
+---
+import '../styles/home.css';
+import SiteHeader from '../components/home/SiteHeader.astro';
+import Hero from '../components/home/Hero.astro';
+import LockIdea from '../components/home/LockIdea.astro';
+import TakingALock from '../components/home/TakingALock.astro';
+import BugBand from '../components/home/BugBand.astro';
+import Pillars from '../components/home/Pillars.astro';
+import Comparison from '../components/home/Comparison.astro';
+import WhatYouDontGet from '../components/home/WhatYouDontGet.astro';
+import GetStarted from '../components/home/GetStarted.astro';
+import SiteFooter from '../components/home/SiteFooter.astro';
+
+const title = 'monolock';
+const description =
+	'A lightweight TCP server for named locks — a distributed mutex without the distributed system.';
+---
+
+<!doctype html>
+<html lang="en" dir="ltr">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<link rel="canonical" href={new URL('/', Astro.site)} />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content={new URL('/', Astro.site)} />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			rel="stylesheet"
+			href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&family=Martian+Mono:wght@400;500&display=swap"
+		/>
+	</head>
+	<body>
+		<SiteHeader />
+		<main>
+			<Hero />
+			<LockIdea />
+			<TakingALock />
+			<BugBand />
+			<Pillars />
+			<Comparison />
+			<WhatYouDontGet />
+			<GetStarted />
+		</main>
+		<SiteFooter />
+	</body>
+</html>

@@ -1,0 +1,157 @@
+<section class="pillars">
+	<div class="wrap">
+		<div class="grid">
+			<div class="cell">
+				<div class="eyebrow-sm idx">01</div>
+				<h3>Fencing tokens built in</h3>
+				<p>
+					Every grant carries a monotonically growing token. Pass it to the resource the lock guards
+					and stale holders fence themselves out — safety on top of liveness.
+				</p>
+				<a href="/concepts/fencing-tokens/">Fencing tokens →</a>
+			</div>
+			<div class="cell">
+				<div class="eyebrow-sm idx">02</div>
+				<h3>Client-chosen leases</h3>
+				<p>
+					Each client picks its own failure-detection window per connection. Heartbeats are
+					RTT-aware, and a dead holder is detected within one lease — while a healthy one can hold
+					forever.
+				</p>
+				<a href="/concepts/how-it-works/">Leases &amp; heartbeats →</a>
+			</div>
+			<div class="cell">
+				<div class="eyebrow-sm idx">03</div>
+				<h3>No dependencies, no database</h3>
+				<p>
+					A single static binary built on the Go standard library alone. No config file, no storage,
+					no cluster to babysit — one process is the whole deployment.
+				</p>
+				<a href="/operations/deployment/">Deployment →</a>
+			</div>
+		</div>
+
+		<div class="ops">
+			<div>
+				<div class="ops-title">Production-grade operations</div>
+				<div class="ops-sub">nothing to add on</div>
+			</div>
+			<div class="chips">
+				<a href="/operations/tls/">TLS &amp; mTLS, SIGHUP rotation</a>
+				<a href="/operations/acl/">identity-based ACL</a>
+				<a href="/operations/audit/">JSON audit log</a>
+				<a href="/operations/admin-api/">admin API</a>
+				<a href="/operations/observability/">Prometheus metrics</a>
+				<a href="/operations/observability/">health endpoints</a>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.pillars {
+		border-top: 1px solid var(--gutter);
+	}
+
+	.wrap {
+		padding-block: 88px;
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 1px;
+		background: var(--gutter);
+		border: 1px solid var(--gutter);
+		border-radius: 10px;
+		overflow: hidden;
+	}
+
+	.cell {
+		background: var(--band);
+		padding: 32px 28px 36px;
+	}
+
+	.idx {
+		margin-bottom: 20px;
+	}
+
+	h3 {
+		margin: 0 0 12px;
+		font-size: 21px;
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		line-height: 1.2;
+	}
+
+	p {
+		margin: 0;
+		font-size: 15.5px;
+		line-height: 1.58;
+		color: var(--text-muted);
+	}
+
+	.cell > a {
+		display: inline-block;
+		margin-top: 18px;
+		font-size: 14.5px;
+	}
+
+	.ops {
+		margin-top: 40px;
+		border: 1px solid var(--gutter);
+		border-radius: 10px;
+		padding: 26px 28px;
+		display: grid;
+		grid-template-columns: 200px minmax(0, 1fr);
+		gap: 32px;
+		align-items: center;
+	}
+
+	.ops-title {
+		font-size: 17px;
+		font-weight: 600;
+		letter-spacing: -0.015em;
+	}
+
+	.ops-sub {
+		font-size: 14px;
+		color: var(--text-dim);
+		margin-top: 4px;
+	}
+
+	.chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.chips a {
+		font-family: var(--mono);
+		font-size: 12.5px;
+		color: var(--text-body);
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		padding: 7px 11px;
+	}
+
+	.chips a:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	@media (max-width: 920px) {
+		.wrap {
+			padding-block: 64px;
+		}
+
+		.grid {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.ops {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 20px;
+		}
+	}
+</style>

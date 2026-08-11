@@ -1,0 +1,82 @@
+---
+import monolockDark from '../../assets/monolock-dark.png';
+---
+
+<header class="site-header">
+	<div class="wrap bar">
+		<a class="brand" href="/">
+			<img src={monolockDark.src} alt="monolock" />
+		</a>
+		<nav>
+			<a class="nav-link" href="/start/quickstart/">Quick start</a>
+			<a class="nav-link" href="/concepts/how-it-works/">How it works</a>
+			<a class="nav-link" href="/comparisons/redis/">Comparisons</a>
+			<a class="nav-link" href="/reference/protocol/">Protocol</a>
+			<a class="gh" href="https://github.com/monolock-dev/monolock">GitHub</a>
+		</nav>
+	</div>
+</header>
+
+<style>
+	.site-header {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		background: rgba(18, 17, 16, 0.86);
+		backdrop-filter: blur(10px);
+		border-bottom: 1px solid var(--gutter);
+	}
+
+	.bar {
+		height: 62px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 32px;
+	}
+
+	.brand {
+		display: flex;
+		align-items: center;
+	}
+
+	.brand img {
+		display: block;
+		height: 22px;
+		width: auto;
+	}
+
+	nav {
+		display: flex;
+		align-items: center;
+		gap: 28px;
+		font-size: 14.5px;
+	}
+
+	.nav-link {
+		color: var(--text-muted);
+	}
+
+	.nav-link:hover {
+		color: var(--text);
+	}
+
+	.gh {
+		color: var(--text);
+		border: 1px solid var(--border-strong);
+		padding: 6px 14px;
+		border-radius: 6px;
+		font-size: 13.5px;
+	}
+
+	.gh:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	@media (max-width: 700px) {
+		.nav-link {
+			display: none;
+		}
+	}
+</style>

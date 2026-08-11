@@ -1,0 +1,87 @@
+<section class="get-started">
+	<div class="wrap">
+		<div class="cols">
+			<div>
+				<h2>One process, one port, no setup</h2>
+				<div class="actions">
+					<a class="btn btn-primary" href="/start/quickstart/">Quick start</a>
+					<a class="btn btn-secondary" href="/reference/protocol/">Wire protocol</a>
+					<a class="btn btn-secondary" href="/clients/writing-a-client/">Writing a client</a>
+				</div>
+			</div>
+			<div class="terminal">
+				<div class="cm"># run the server</div>
+				<div><span class="prompt">$</span> docker run -p 7070:7070 ghcr.io/monolock-dev/monolock</div>
+				<div class="cm gap"># add the client</div>
+				<div><span class="prompt">$</span> go get github.com/monolock-dev/monolock-go</div>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.get-started {
+		border-top: 1px solid var(--gutter);
+		background: var(--band);
+	}
+
+	.wrap {
+		padding-block: 96px;
+	}
+
+	.cols {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 72px;
+		align-items: center;
+	}
+
+	h2 {
+		margin: 0;
+		font-size: clamp(30px, 3.4vw, 40px);
+		line-height: 1.08;
+		letter-spacing: -0.03em;
+		font-weight: 600;
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px;
+		margin-top: 32px;
+	}
+
+	.terminal {
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--panel);
+		padding: 22px 20px;
+		font-family: var(--mono);
+		font-size: 13.5px;
+		line-height: 1.9;
+		overflow-x: auto;
+	}
+
+	.cm {
+		color: var(--code-comment);
+	}
+
+	.gap {
+		margin-top: 12px;
+	}
+
+	.prompt {
+		color: var(--accent);
+	}
+
+	@media (max-width: 920px) {
+		.wrap {
+			padding-block: 64px;
+		}
+
+		.cols {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 48px;
+		}
+	}
+</style>

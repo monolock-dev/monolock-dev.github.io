@@ -1,0 +1,140 @@
+/* Design tokens — design_handoff_monolock_homepage/README.md */
+:root {
+	--bg: #121110;
+	--band: #151412;
+	--panel: #191715;
+	--gutter: #24211f;
+	--hairline: #211f1d;
+	--border: #2e2b28;
+	--border-strong: #35312d;
+	--border-hover: #6d6660;
+	--accent: #f0b429;
+	--accent-hover: #ffd471;
+	--tint-holder: rgba(240, 180, 41, 0.07);
+	--tint-column: rgba(240, 180, 41, 0.05);
+	--text: #f4f1ec;
+	--text-bright: #d8d3cc;
+	--text-body: #b8b2aa;
+	--text-muted: #a39d94;
+	--text-small: #8e8880;
+	--text-dim: #736d64;
+	--text-dimmest: #6d6660;
+	--code-comment: #5c564f;
+	--code-string: #8fb3a8;
+	--code-number: #e5c07b;
+	--code-keyword: #6d6660;
+	--sans: 'Instrument Sans', system-ui, sans-serif;
+	--mono: 'JetBrains Mono', monospace;
+	--label: 'Martian Mono', monospace;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html {
+	background: var(--bg);
+}
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--sans);
+	-webkit-font-smoothing: antialiased;
+	text-wrap: pretty;
+}
+
+a {
+	color: var(--accent);
+	text-decoration: none;
+	transition:
+		color 0.13s ease,
+		border-color 0.13s ease,
+		background 0.13s ease;
+}
+
+a:hover {
+	color: var(--accent-hover);
+}
+
+button {
+	transition:
+		color 0.13s ease,
+		border-color 0.13s ease,
+		background 0.13s ease;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+::selection {
+	background: var(--accent);
+	color: var(--bg);
+}
+
+.wrap {
+	max-width: 1180px;
+	margin: 0 auto;
+	padding-inline: 40px;
+}
+
+/* Section eyebrow */
+.eyebrow {
+	font-family: var(--label);
+	font-size: 10.5px;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--text-dim);
+}
+
+/* Component eyebrow */
+.eyebrow-sm {
+	font-family: var(--label);
+	font-size: 9.5px;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--text-dim);
+}
+
+.btn {
+	display: inline-block;
+	font-size: 15px;
+	padding: 12px 22px;
+	border-radius: 7px;
+}
+
+.btn-primary {
+	background: var(--accent);
+	color: var(--bg);
+	font-weight: 600;
+}
+
+.btn-primary:hover {
+	background: var(--accent-hover);
+	color: var(--bg);
+}
+
+.btn-secondary {
+	border: 1px solid var(--border-strong);
+	color: var(--text);
+}
+
+.btn-secondary:hover {
+	border-color: var(--border-hover);
+	color: var(--text);
+}
+
+.panel {
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: var(--panel);
+	overflow: hidden;
+}
+
+@media (max-width: 720px) {
+	.wrap {
+		padding-inline: 24px;
+	}
+}

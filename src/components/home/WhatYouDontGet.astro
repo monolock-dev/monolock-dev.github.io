@@ -1,0 +1,132 @@
+<section class="dont-get">
+	<div class="wrap">
+		<div class="cols">
+			<div>
+				<div class="eyebrow eb">Simple by design</div>
+				<h2>What you don't get</h2>
+				<p>
+					A single point of coordination — no replication, no quorum, no consensus. Know exactly
+					what you get, and what you don't.
+				</p>
+			</div>
+
+			<div class="rows">
+				<div class="row">
+					<div class="label">capacity</div>
+					<div class="text">
+						One connection is one file descriptor, so capacity is whatever <span class="code"
+							>RLIMIT_NOFILE</span
+						> allows. No connection limit, no waiter-queue limit.
+					</div>
+				</div>
+				<div class="row">
+					<div class="label">at the limit</div>
+					<div class="text">
+						The server backs off and retries rather than exiting, and picks connections up as
+						sessions free descriptors.
+					</div>
+				</div>
+				<div class="row">
+					<div class="label">state</div>
+					<div class="text">
+						Per-session state is small and fixed; there is no per-lock history and nothing is
+						persisted.
+					</div>
+				</div>
+				<div class="row">
+					<div class="label">clocks</div>
+					<div class="text">
+						Only durations cross the wire, never timestamps. Both sides use monotonic time, so
+						clocks need no synchronisation.
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.dont-get {
+		border-top: 1px solid var(--gutter);
+	}
+
+	.wrap {
+		padding-block: 88px;
+	}
+
+	.cols {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 72px;
+	}
+
+	.eb {
+		margin-bottom: 22px;
+	}
+
+	h2 {
+		margin: 0;
+		font-size: clamp(30px, 3.4vw, 42px);
+		line-height: 1.08;
+		letter-spacing: -0.03em;
+		font-weight: 600;
+		max-width: 18ch;
+	}
+
+	p {
+		margin: 24px 0 0;
+		font-size: 17.5px;
+		line-height: 1.62;
+		color: var(--text-body);
+	}
+
+	.rows {
+		display: flex;
+		flex-direction: column;
+		gap: 22px;
+		padding-top: 6px;
+	}
+
+	.row {
+		display: grid;
+		grid-template-columns: 132px minmax(0, 1fr);
+		gap: 20px;
+		align-items: baseline;
+		border-bottom: 1px solid var(--hairline);
+		padding-bottom: 20px;
+	}
+
+	.row:last-child {
+		border-bottom: 0;
+		padding-bottom: 0;
+	}
+
+	.label {
+		font-family: var(--mono);
+		font-size: 12.5px;
+		color: var(--accent);
+	}
+
+	.text {
+		font-size: 15.5px;
+		line-height: 1.55;
+		color: var(--text-muted);
+	}
+
+	.code {
+		font-family: var(--mono);
+		font-size: 14px;
+		color: var(--text-bright);
+	}
+
+	@media (max-width: 920px) {
+		.wrap {
+			padding-block: 64px;
+		}
+
+		.cols {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 48px;
+		}
+	}
+</style>

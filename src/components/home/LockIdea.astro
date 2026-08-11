@@ -1,0 +1,479 @@
+<section class="lock-idea">
+	<div class="wrap">
+		<div class="cols">
+			<div>
+				<div class="eyebrow eb">The whole idea</div>
+				<h2>One connection,<br />one lock</h2>
+				<p>
+					A TCP connection is one claim on one named lock. Closing the connection <em>is</em> the
+					release — there is no release call to forget, and the next waiter in the FIFO queue is
+					promoted at once.
+				</p>
+				<p>
+					Promotion is a push, not a poll: the server sends <span class="acquired">ACQUIRED</span> on
+					its own initiative, so handover latency is one one-way trip.
+				</p>
+				<a class="more" href="/concepts/how-it-works/">Read the mental model →</a>
+			</div>
+
+			<div>
+				<div class="panel" id="lock-diagram">
+					<div class="ld-head">
+						<div class="ld-head-lock">
+							<span class="eyebrow-sm">lock</span>
+							<span class="ld-lock-name">nightly-import</span>
+						</div>
+						<div class="ld-head-token">
+							<span class="eyebrow-sm">token</span>
+							<span class="ld-token" data-token>41</span>
+						</div>
+					</div>
+
+					<div class="ld-sessions" data-sessions>
+						<div class="ld-row ld-holder">
+							<span class="ld-tag">holder</span>
+							<span class="ld-name">worker-a</span>
+							<span class="ld-lease">lease 2s</span>
+							<span class="ld-state">ACQUIRED</span>
+						</div>
+						<div class="ld-row ld-waiter">
+							<span class="ld-pos">#1</span>
+							<span class="ld-wname">worker-b</span>
+							<span class="ld-wlease">lease 2s</span>
+							<span class="ld-wstate">WAITING</span>
+						</div>
+						<div class="ld-row ld-waiter">
+							<span class="ld-pos">#2</span>
+							<span class="ld-wname">worker-c</span>
+							<span class="ld-wlease">lease 5s</span>
+							<span class="ld-wstate">WAITING</span>
+						</div>
+					</div>
+
+					<div class="ld-controls">
+						<button type="button" class="ld-btn-close" data-action="close">Close connection</button>
+						<button type="button" class="ld-btn-hang" data-action="hang">Hang the holder</button>
+						<button type="button" class="ld-btn-acquire" data-action="acquire">+ ACQUIRE</button>
+					</div>
+					<div class="ld-note" data-note aria-live="polite">
+						A connection is a claim. Close it, hang it, or queue another claimant.
+					</div>
+				</div>
+
+				<table class="handover">
+					<thead>
+						<tr>
+							<th>Owner's exit</th>
+							<th>Handover latency</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td>Graceful (connection closed)</td>
+							<td class="imm">immediate</td>
+						</tr>
+						<tr>
+							<td>Force-released by an admin</td>
+							<td class="imm">immediate</td>
+						</tr>
+						<tr>
+							<td>Process killed, socket reset by the OS</td>
+							<td class="imm">immediate</td>
+						</tr>
+						<tr>
+							<td>Hang, GC pause, network partition</td>
+							<td>≤ the owner's lease</td>
+						</tr>
+						<tr>
+							<td>Slow reader/writer (stuck socket)</td>
+							<td>≤ io-timeout per operation</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+</section>
+
+<script>
+	const root = document.getElementById('lock-diagram');
+	if (root) {
+		const tokenEl = root.querySelector('[data-token]') as HTMLElement;
+		const sessionsEl = root.querySelector('[data-sessions]') as HTMLElement;
+		const noteEl = root.querySelector('[data-note]') as HTMLElement;
+
+		type Session = { name: string; lease: string };
+		let holder: Session | null = { name: 'worker-a', lease: '2s' };
+		let queue: Session[] = [
+			{ name: 'worker-b', lease: '2s' },
+			{ name: 'worker-c', lease: '5s' },
+		];
+		let token = 41;
+		let seq = 3;
+
+		function render(note: string) {
+			tokenEl.textContent = String(token);
+			noteEl.textContent = note;
+			let html = holder
+				? `<div class="ld-row ld-holder">
+						<span class="ld-tag">holder</span>
+						<span class="ld-name">${holder.name}</span>
+						<span class="ld-lease">lease ${holder.lease}</span>
+						<span class="ld-state">ACQUIRED</span>
+					</div>`
+				: `<div class="ld-free">lock free — no session holds it</div>`;
+			queue.forEach((w, i) => {
+				html += `<div class="ld-row ld-waiter">
+						<span class="ld-pos">#${i + 1}</span>
+						<span class="ld-wname">${w.name}</span>
+						<span class="ld-wlease">lease ${w.lease}</span>
+						<span class="ld-wstate">WAITING</span>
+					</div>`;
+			});
+			sessionsEl.innerHTML = html;
+		}
+
+		// Shift the head of the queue into holder; the token only advances
+		// when a session was actually promoted — no grant, no new token.
+		function promote(note: string) {
+			const next = queue.shift() ?? null;
+			holder = next;
+			if (next) token += 1;
+			render(note);
+		}
+
+		root.querySelector('[data-action="close"]')?.addEventListener('click', () => {
+			if (!holder) return render('Nothing to close — the lock is free.');
+			const old = holder.name;
+			const next = queue[0];
+			promote(
+				next
+					? `${old} closed its connection → ${next.name} promoted immediately, token +1. Close is the release.`
+					: `${old} closed its connection → lock free, no waiters.`
+			);
+		});
+
+		root.querySelector('[data-action="hang"]')?.addEventListener('click', () => {
+			if (!holder) return render('Nothing to hang — the lock is free.');
+			const { name: old, lease } = holder;
+			const next = queue[0];
+			promote(
+				next
+					? `${old} stopped answering → the server waits out ${lease} of silence, then promotes ${next.name} with a larger token.`
+					: `${old} stopped answering → lock released after ${lease} of silence.`
+			);
+		});
+
+		root.querySelector('[data-action="acquire"]')?.addEventListener('click', () => {
+			const name = 'worker-' + String.fromCharCode(97 + (seq % 26));
+			const lease = ['2s', '5s', '500ms'][seq % 3];
+			seq += 1;
+			if (!holder) {
+				holder = { name, lease };
+				token += 1;
+				render(`${name} ACQUIRED at once — the lock was free.`);
+			} else {
+				queue.push({ name, lease });
+				render(`${name} sent ACQUIRE → WAITING at position ${queue.length}. Waiters heartbeat too.`);
+			}
+		});
+	}
+</script>
+
+<style>
+	.lock-idea {
+		border-top: 1px solid var(--gutter);
+		background: var(--band);
+	}
+
+	.wrap {
+		padding-block: 88px;
+	}
+
+	.cols {
+		display: grid;
+		grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+		gap: 72px;
+	}
+
+	.eb {
+		margin-bottom: 22px;
+	}
+
+	h2 {
+		margin: 0;
+		font-size: clamp(30px, 3.4vw, 42px);
+		line-height: 1.08;
+		letter-spacing: -0.03em;
+		font-weight: 600;
+	}
+
+	p {
+		margin: 24px 0 0;
+		font-size: 17.5px;
+		line-height: 1.62;
+		color: var(--text-body);
+	}
+
+	p + p {
+		margin-top: 18px;
+	}
+
+	em {
+		color: var(--text);
+		font-style: italic;
+	}
+
+	.acquired {
+		font-family: var(--mono);
+		font-size: 15px;
+		color: var(--accent);
+	}
+
+	.more {
+		display: inline-block;
+		margin-top: 26px;
+		font-size: 15px;
+		border-bottom: 1px solid #4a443e;
+		padding-bottom: 2px;
+	}
+
+	.handover {
+		width: 100%;
+		margin-top: 28px;
+		font-size: 14px;
+	}
+
+	.handover th {
+		text-align: left;
+		padding: 0 12px 10px 0;
+		font-family: var(--label);
+		font-size: 9.5px;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--text-dim);
+		font-weight: 400;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.handover th:last-child {
+		padding: 0 0 10px 12px;
+		width: 44%;
+	}
+
+	.handover td {
+		padding: 11px 12px 11px 0;
+		color: var(--text-body);
+		border-bottom: 1px solid var(--hairline);
+	}
+
+	.handover td:last-child {
+		padding: 11px 0 11px 12px;
+		font-family: var(--mono);
+		font-size: 13px;
+		color: var(--text-small);
+	}
+
+	.handover td.imm {
+		color: var(--accent);
+	}
+
+	.handover tr:last-child td {
+		border-bottom: 0;
+	}
+
+	@media (max-width: 920px) {
+		.wrap {
+			padding-block: 64px;
+		}
+
+		.cols {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 48px;
+		}
+	}
+</style>
+
+<style is:global>
+	/* Diagram internals stay global: rows are re-rendered by the island via
+	   innerHTML, which does not carry Astro's scoped-style attributes. */
+	#lock-diagram .ld-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 14px 18px;
+		border-bottom: 1px solid var(--border);
+	}
+
+	#lock-diagram .ld-head-lock {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		min-width: 0;
+	}
+
+	#lock-diagram .ld-lock-name {
+		font-family: var(--mono);
+		font-size: 14px;
+		color: var(--text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	#lock-diagram .ld-head-token {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		flex: none;
+	}
+
+	#lock-diagram .ld-token {
+		font-family: var(--mono);
+		font-size: 15px;
+		font-weight: 500;
+		color: var(--accent);
+	}
+
+	#lock-diagram .ld-sessions {
+		padding: 8px 0;
+	}
+
+	#lock-diagram .ld-row {
+		display: grid;
+		grid-template-columns: 108px minmax(0, 1fr) 78px 96px;
+		align-items: center;
+		gap: 12px;
+		padding: 13px 18px;
+	}
+
+	#lock-diagram .ld-holder {
+		background: var(--tint-holder);
+		border-left: 2px solid var(--accent);
+	}
+
+	#lock-diagram .ld-tag {
+		font-family: var(--label);
+		font-size: 9.5px;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--accent);
+	}
+
+	#lock-diagram .ld-name {
+		font-family: var(--mono);
+		font-size: 14px;
+		color: var(--text);
+	}
+
+	#lock-diagram .ld-lease {
+		font-family: var(--mono);
+		font-size: 12.5px;
+		color: var(--text-small);
+	}
+
+	#lock-diagram .ld-state {
+		font-family: var(--mono);
+		font-size: 11.5px;
+		letter-spacing: 0.08em;
+		color: var(--accent);
+	}
+
+	#lock-diagram .ld-waiter {
+		border-left: 2px solid var(--border);
+	}
+
+	#lock-diagram .ld-pos {
+		font-family: var(--mono);
+		font-size: 11.5px;
+		color: var(--text-dimmest);
+	}
+
+	#lock-diagram .ld-wname {
+		font-family: var(--mono);
+		font-size: 14px;
+		color: var(--text-body);
+	}
+
+	#lock-diagram .ld-wlease {
+		font-family: var(--mono);
+		font-size: 12.5px;
+		color: var(--text-dimmest);
+	}
+
+	#lock-diagram .ld-wstate {
+		font-family: var(--mono);
+		font-size: 11.5px;
+		letter-spacing: 0.08em;
+		color: var(--text-dimmest);
+	}
+
+	#lock-diagram .ld-free {
+		padding: 22px 20px;
+		font-family: var(--mono);
+		font-size: 13px;
+		color: var(--text-dimmest);
+		border-left: 2px solid var(--border);
+	}
+
+	#lock-diagram .ld-controls {
+		border-top: 1px solid var(--border);
+		padding: 14px 18px;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+		align-items: center;
+	}
+
+	#lock-diagram .ld-controls button {
+		font-family: var(--sans);
+		font-size: 13px;
+		font-weight: 500;
+		padding: 9px 14px;
+		border-radius: 6px;
+		cursor: pointer;
+	}
+
+	#lock-diagram .ld-btn-close {
+		color: var(--bg);
+		background: var(--accent);
+		border: 0;
+	}
+
+	#lock-diagram .ld-btn-close:hover {
+		background: var(--accent-hover);
+	}
+
+	#lock-diagram .ld-btn-hang {
+		color: var(--text);
+		background: transparent;
+		border: 1px solid var(--border-strong);
+	}
+
+	#lock-diagram .ld-btn-hang:hover {
+		border-color: var(--border-hover);
+	}
+
+	#lock-diagram .ld-btn-acquire {
+		color: var(--text-muted);
+		background: transparent;
+		border: 1px solid var(--border);
+	}
+
+	#lock-diagram .ld-btn-acquire:hover {
+		color: var(--text);
+		border-color: var(--border-hover);
+	}
+
+	#lock-diagram .ld-note {
+		border-top: 1px solid var(--border);
+		padding: 13px 18px;
+		background: var(--band);
+		font-family: var(--mono);
+		font-size: 12.5px;
+		line-height: 1.5;
+		color: var(--text-small);
+		min-height: 44px;
+	}
+</style>
