@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightLlmsTxt from 'starlight-llms-txt';
 import mermaid from 'astro-mermaid';
 
 // https://astro.build/config
@@ -20,6 +21,27 @@ export default defineConfig({
 				replacesTitle: true,
 			},
 			favicon: '/favicon.svg',
+			plugins: [
+				starlightLlmsTxt({
+					details:
+						'monolock is a single-binary lock server: clients hold a lock for as long as their TCP connection stays open, and waiters are promoted in FIFO order. It speaks a small line-based text protocol, issues monotonic fencing tokens, and offers TTLs, ACL authorization, an HTTP admin API, and Prometheus metrics.',
+					promote: ['start/introduction', 'start/quickstart'],
+					demote: ['comparisons/**'],
+					exclude: ['comparisons/**'],
+					customSets: [
+						{
+							label: 'Writing a client',
+							description:
+								'everything needed to implement a monolock client library: the wire protocol, error codes, and a guide to client design',
+							paths: [
+								'reference/**',
+								'clients/writing-a-client',
+								'clients/go',
+							],
+						},
+					],
+				}),
+			],
 			customCss: ['./src/styles/docs.css'],
 			components: {
 				Header: './src/components/docs/Header.astro',
