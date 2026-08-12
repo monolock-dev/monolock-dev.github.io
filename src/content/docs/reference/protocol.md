@@ -46,7 +46,7 @@ stays constant for the life of the connection. There is no upper limit. The
 hold time of a lock is unlimited in all cases. The lease only sets the
 detection speed for a dead holder. Select the smallest value that is safe
 against the network pauses between the client and the server: milliseconds
-on the same machine, seconds across an unreliable WAN.
+on the same machine, seconds across an unreliable wide-area network (WAN).
 
 **Lock names** are raw UTF-8. They are case sensitive. The server does not
 normalize them and does not trim them. The limit is **255 bytes**. This
@@ -124,7 +124,8 @@ safeRTT       = smoothedRTT * 2  // EWMA, alpha = 0.2
 interval      = clamp(baseInterval - safeRTT, minHeartbeatInterval, baseInterval)
 ```
 
-RTT can only decrease the interval. A fast link never increases it above
+The round-trip time (RTT) can only decrease the interval. A fast link
+never increases it above
 `baseInterval`. If `safeRTT` is equal to or more than the full base
 interval, the client sends the subsequent heartbeat immediately after the
 answer to the previous one.

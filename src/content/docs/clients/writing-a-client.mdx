@@ -50,7 +50,8 @@ message. Do not assume that a message arrives in one piece.
 The [heartbeat rules](/reference/protocol/#heartbeats) are normative:
 
 - the base interval is `lease / 4`;
-- decrease the interval by two times the smoothed RTT (EWMA, alpha 0.2); do
+- decrease the interval by two times the round-trip time (RTT), smoothed
+  with an exponentially weighted moving average (EWMA, alpha 0.2); do
   not go below a floor (the Go client uses 100ms); do not go above the base
   interval;
 - **a maximum of one heartbeat in flight** — send the subsequent heartbeat
@@ -100,7 +101,7 @@ lock. Continuation in an uncertain state is never safe.
 The session can stop because of a heartbeat timeout, an EOF, or an `ERROR`.
 Then the work that the lock guarded must get a stop signal (cancel a
 context, set a flag, kill a task). A new acquisition is a new `ACQUIRE` on a
-new connection, at the back of the FIFO queue. There is no silent
+new connection, at the back of the first-in, first-out (FIFO) queue. There is no silent
 re-acquisition.
 
 ## Testing against a real server

@@ -81,7 +81,7 @@ import { Tabs, TabItem, Steps, Aside, LinkCard, CardGrid } from '@astrojs/starli
 3. **See the handover.**
 
    Run the program two times at the same time. The second process goes into
-   the FIFO queue and prints nothing. When you stop the first process, the
+   the first-in, first-out (FIFO) queue and prints nothing. When you stop the first process, the
    server promotes the second process *immediately*. There is no timeout to
    wait for. If you stop the first process with `kill -9`, the handover takes
    a maximum of the lease (2 seconds above). This is the failure-detection

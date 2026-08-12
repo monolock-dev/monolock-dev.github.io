@@ -7,7 +7,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 When a connection is lost, the server moves the lock. This gives *liveness*:
 the lock never stays behind a dead holder for more than the lease. But this
-does not give *safety*. A GC cycle, a closed laptop lid, or a network problem
+does not give *safety*. A garbage-collection (GC) cycle, a closed laptop lid, or a network problem
 can pause a holder. The holder can then continue and write to the guarded
 resource **after** its lease expired and the lock moved. For a window of
 time, two processes both think that they hold the lock. No limit that the
@@ -28,7 +28,7 @@ heartbeat acknowledgement — contains the same token that the session got at
 its grant.
 
 Send the token with each operation on the guarded resource — a conditional
-write, a CAS, an `if token >= stored_token` check. The resource must reject
+write, a compare-and-swap (CAS), an `if token >= stored_token` check. The resource must reject
 each operation that carries a smaller number than the largest number that the
 resource has seen.
 
@@ -94,7 +94,8 @@ Across two machines, the same condition means synchronised clocks. In a
 failover, the first grant of the new server comes after the detection and
 the switch, thus more than one second after the last grant of the old
 server. The tokens of the new server are larger — if the clock of the new
-machine is not behind the clock of the old machine. NTP gives this.
+machine is not behind the clock of the old machine. Synchronisation with
+the Network Time Protocol (NTP) gives this.
 
 For a single-node server with no consensus and no disk, this is a deliberate
 trade-off. This page states the trade-off and does not hide it. If the

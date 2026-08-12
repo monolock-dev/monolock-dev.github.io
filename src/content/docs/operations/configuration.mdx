@@ -19,7 +19,7 @@ the same table as below.
 | `-admin-listen` | `MONOLOCK_ADMIN_LISTEN_ADDRESS` | _(empty)_ | address of the admin HTTP API; empty disables it |
 | `-tls-cert` | `MONOLOCK_TLS_CERT` | _(empty)_ | PEM server certificate; with `-tls-key` enables TLS on the protocol port |
 | `-tls-key` | `MONOLOCK_TLS_KEY` | _(empty)_ | PEM private key for `-tls-cert` |
-| `-tls-client-ca` | `MONOLOCK_TLS_CLIENT_CA` | _(empty)_ | PEM CA pool for client certificates; enables mTLS |
+| `-tls-client-ca` | `MONOLOCK_TLS_CLIENT_CA` | _(empty)_ | PEM certificate-authority (CA) pool for client certificates; enables mutual TLS (mTLS) |
 | `-acl-file` | `MONOLOCK_ACL_FILE` | _(empty)_ | JSON file with identity → lock name glob rules; requires `-tls-client-ca`, empty disables authorization |
 | `-audit-log` | `MONOLOCK_AUDIT_LOG` | _(empty)_ | audit log destination: a file path or `-` for stdout; empty disables audit |
 | `-io-timeout` | `MONOLOCK_IO_TIMEOUT` | `5s` | deadline for a single read or write on a connection |
@@ -48,7 +48,7 @@ again. The server reads these files again:
 
 - the TLS certificate, the key, and the client CA, so that certificates
   [rotate without a restart](/operations/tls/#certificate-reload)
-- the [ACL file](/operations/acl/#reload)
+- the [ACL (access-control list) file](/operations/acl/#reload)
 
 The server also opens the [audit log](/operations/audit/#rotation) again,
 for logrotate.

@@ -17,14 +17,15 @@ tasks, for example logrotate or the container log pipeline.
 ## Events
 
 Each event contains `time` (UTC, RFC 3339), `event`, `lock`, `identity`
-(empty without [mTLS](/operations/tls/#client-identity)), and `remote_addr`.
+(empty without [mutual TLS (mTLS)](/operations/tls/#client-identity)), and
+`remote_addr`.
 Each event type adds these fields:
 
 | Event | Extra fields | Meaning |
 | ----- | ------------ | ------- |
 | `granted` | `token`, `wait_ms` | the session became the owner after a wait of `wait_ms` |
 | `released` | `token`, `held_ms`, `reason` | an ownership ended; `reason` is `graceful`, `expired`, `io_timeout` or `force` |
-| `denied` | — | the [ACL](/operations/acl/) refused an `ACQUIRE` |
+| `denied` | — | the [access-control list (ACL)](/operations/acl/) refused an `ACQUIRE` |
 | `force_release` | `token` | the admin [force-released](/operations/admin-api/) the lock (the disconnected session also gets a `released` event with reason `force`) |
 | `kick_waiter` | — | the admin removed a waiter from a queue |
 

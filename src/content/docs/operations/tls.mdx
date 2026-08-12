@@ -6,8 +6,9 @@ description: Encrypting the protocol port, authenticating clients with certifica
 import { Aside, Steps } from '@astrojs/starlight/components';
 
 `-tls-cert` and `-tls-key` (PEM) enable TLS on the protocol port. The two
-flags are valid only together. `-tls-client-ca` adds a PEM CA pool for
-client certificates and enables **mTLS**. Each client must show a
+flags are valid only together. `-tls-client-ca` adds a PEM
+certificate-authority (CA) pool for client certificates and enables
+**mutual TLS (mTLS)**. Each client must show a
 certificate. The server verifies the certificate against the pool. If the
 verification fails, the server rejects the connection at the handshake. A
 client CA without a server certificate and key is a configuration error.
@@ -34,7 +35,7 @@ other single read. The server counts failures in
 
 mTLS is the only source of client identity. By design, there is no token
 authentication and no password authentication. If you need
-[ACL authorization](/operations/acl/) or identities in the
+[ACL (access-control list) authorization](/operations/acl/) or identities in the
 [audit log](/operations/audit/), then you need mTLS.
 
 ## Client identity
@@ -42,7 +43,8 @@ authentication and no password authentication. If you need
 The server derives the identity from the verified client certificate. The
 server uses the first item that is available:
 
-1. the first **URI SAN** (compatible with SPIFFE); if this is not present,
+1. the first **URI SAN** (Subject Alternative Name; compatible with
+   SPIFFE); if this is not present,
 2. the first **DNS SAN**; if this is not present,
 3. the **Common Name**.
 
@@ -51,7 +53,7 @@ against the string. The [audit log](/operations/audit/) records the string.
 The [admin API](/operations/admin-api/) shows the string for each holder
 and each waiter. Without mTLS, the identity is empty.
 
-An example with a SPIFFE-style PKI: a certificate that contains
+An example with a SPIFFE-style public-key infrastructure (PKI): a certificate that contains
 `URI:spiffe://prod/worker/7` gives exactly this string as the identity. An
 ACL rule such as `spiffe://prod/worker/*` then matches this identity.
 

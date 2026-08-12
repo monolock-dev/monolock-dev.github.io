@@ -23,14 +23,14 @@ the full model:
   When the connection closes, the server releases the lock. There is no
   `RELEASE` command that you can forget. There is no session token that you
   can lose.
-- **Named locks, FIFO waiters.** Lock names are raw UTF-8 strings with a
+- **Named locks, FIFO (first in, first out) waiters.** Lock names are raw UTF-8 strings with a
   maximum length of 255 bytes. The server promotes the waiters strictly in
   the sequence of their arrival.
 - **Connection-scoped ownership.** After a controlled stop of the owner, the
   subsequent waiter gets the lock immediately. If the owner stops or the
   network fails, the server moves the lock when the session is silent for a
   full lease.
-- **Client-selected leases, RTT-aware heartbeats.** Each client selects the
+- **Client-selected leases, RTT (round-trip time)-aware heartbeats.** Each client selects the
   detection speed for a dead holder. The server has no global policy.
 - **Fencing tokens.** Each grant contains a number that is strictly larger
   than the number of each earlier grant. Thus the guarded resource can reject
@@ -42,8 +42,8 @@ The server is one static Go binary. It has no dependencies outside the
 standard library: no database, no config file, no sidecar. The necessary
 operations functions are all included:
 
-- [TLS and mTLS](/operations/tls/) with certificate rotation on `SIGHUP`
-- [ACL authorization](/operations/acl/): mTLS identity → lock name glob rules
+- [TLS and mutual TLS (mTLS)](/operations/tls/) with certificate rotation on `SIGHUP`
+- [ACL (access-control list) authorization](/operations/acl/): mTLS identity → lock name glob rules
 - [JSON audit log](/operations/audit/) of each ownership change
 - [Admin HTTP API](/operations/admin-api/): introspection, force-release,
   removal of waiters (kick)

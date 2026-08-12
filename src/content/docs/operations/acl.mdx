@@ -8,8 +8,9 @@ import { Aside } from '@astrojs/starlight/components';
 `-acl-file` points to a JSON file. The file maps client identities to the
 lock names that they can acquire. The flag requires `-tls-client-ca`. The
 identity comes from the verified
-[mTLS certificate](/operations/tls/#client-identity). Without mTLS, there is
-no identity to authorize. Without an ACL file, authorization is off, and each
+[mutual TLS (mTLS) certificate](/operations/tls/#client-identity). Without
+mTLS, there is no identity to authorize. Without an access-control list
+(ACL) file, authorization is off, and each
 client can acquire each lock.
 
 ```json

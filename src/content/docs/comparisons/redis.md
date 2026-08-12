@@ -3,7 +3,7 @@ title: "monolock vs Redis & Redlock"
 description: "A comparison of Redis locks (SET NX PX, Redlock) and monolock: fencing tokens, TTL and connection ownership, FIFO queues, and when monolock is a Redlock alternative."
 ---
 
-A Redis lock is a key that has a TTL. The client that sets the key is the
+A Redis lock is a key that has a TTL (time to live). The client that sets the key is the
 owner of the lock. The lock stops when the key expires or when a client
 deletes the key. A monolock lock is a TCP connection. The client that holds
 the connection is the owner of the lock. When the connection closes, the
@@ -11,7 +11,8 @@ server releases the lock.
 
 Possibly you operate Redis, and your locks only prevent unnecessary work and
 do not prevent damage to data. Then a Redis lock on one instance is a good
-solution. But possibly you want fencing tokens, a FIFO queue, and a holder
+solution. But possibly you want fencing tokens, a first-in, first-out
+(FIFO) queue, and a holder
 that knows about a lost lock before the server gives the lock to a different
 client. monolock is made for this.
 
@@ -31,7 +32,8 @@ Redis documentation. Client implementations are available in most languages.
 In 2016, Martin Kleppmann wrote the article "How to do distributed locking".
 This article changed all subsequent discussions about Redis locks. His first
 argument is applicable to each lock that has an expiry time. A client can
-stop for more time than the TTL. Possible causes are a stop-the-world GC
+stop for more time than the TTL. Possible causes are a stop-the-world
+garbage collection (GC)
 cycle, a page fault, or a preempted VM. The client then continues, thinks
 that it holds the lock, and writes to the resource. But the lock is not
 valid. His solution is the **fencing token**: a number that increases with
@@ -154,7 +156,8 @@ only one waiter gets a message. The handover is immediate after a controlled
 stop. After a crash, the handover occurs in a maximum of one lease.
 
 **Monotonic time only.** Only durations go across the network. The two sides
-use only monotonic clocks. Thus an NTP step has no effect. This is a direct
+use only monotonic clocks. Thus a step of the Network Time Protocol (NTP)
+clock has no effect. This is a direct
 answer to the wall-clock warning in the Redis documentation.
 
 **The disadvantage:** monolock is a single point of coordination. Redlock

@@ -6,7 +6,7 @@ description: Sessions, leases, heartbeats, FIFO queues and handover — the comp
 import { Aside } from '@astrojs/starlight/components';
 
 One client owns a named lock and does the work. The other clients wait in a
-FIFO queue. After a controlled shutdown, the subsequent client takes the lock
+first-in, first-out (FIFO) queue. After a controlled shutdown, the subsequent client takes the lock
 immediately. If a client stops or the network fails, the session becomes
 silent. When the session is silent for a full lease, the server moves the
 lock. This page explains each part of this model.
@@ -57,7 +57,8 @@ Each client selects its own lease in `ACQUIRE`, for its own connection. There
 is no server-side lease setting and no upper limit. The hold time of a lock
 is unlimited, thus a limit on the lease would limit nothing. Select the
 smallest value that is larger than the network pauses between you and the
-server: milliseconds on the same machine, seconds across an unreliable WAN.
+server: milliseconds on the same machine, seconds across an unreliable
+wide-area network (WAN).
 
 Only durations go across the network, never timestamps. Thus clock
 synchronisation is not necessary. The two sides use only monotonic time. A
@@ -76,7 +77,8 @@ interval      = clamp(baseInterval - safeRTT, minHeartbeatInterval, baseInterval
 ```
 
 Four beats in each lease means that one lost or delayed heartbeat does not
-stop the session. The RTT correction only makes the interval *smaller*. On a
+stop the session. The round-trip time (RTT) correction only makes the
+interval *smaller*. On a
 slow link, the client sends its heartbeat sooner, to compensate for the time
 in flight. On a fast link, the interval never goes above `baseInterval`.
 
@@ -110,8 +112,8 @@ The speed of the handover depends on how the previous owner went away:
 | ------------ | ---------------- | --- |
 | Controlled stop (connection closed) | immediate | the close *is* the release |
 | Force-released by an [admin](/operations/admin-api/) | immediate | the server itself closes the session of the owner |
-| Process killed, socket reset by the OS | immediate | the TCP RST reaches the server |
-| Hang, GC pause, network partition | ≤ the owner's lease | the server must wait for the full lease of silence |
+| Process killed, socket reset by the OS | immediate | the TCP reset (RST) reaches the server |
+| Hang, garbage-collection (GC) pause, network partition | ≤ the owner's lease | the server must wait for the full lease of silence |
 | Slow reader/writer (stuck socket) | ≤ `io-timeout` per operation | a blocked write to the session fails and ends the session |
 
 The last row is the only I/O policy of the server. One read or one write on a

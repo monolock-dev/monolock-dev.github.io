@@ -52,7 +52,8 @@ curl -s localhost:7071/api/info
 
 `GET /api/locks` lists each lock that has an owner or a queue that is not
 empty. The server does not store the name of an idle lock. `?match=` uses
-the same [glob language](/operations/acl/#glob-language) as the ACL rules:
+the same [glob language](/operations/acl/#glob-language) as the
+access-control list (ACL) rules:
 
 ```sh
 curl -s 'localhost:7071/api/locks?match=nightly/*'
@@ -83,8 +84,8 @@ curl -s 'localhost:7071/api/locks?match=nightly/*'
 ```
 
 `GET /api/locks/{name}` returns the same shape for one lock, with its full
-waiter queue in FIFO sequence. `identity` is empty if
-[mTLS](/operations/tls/#client-identity) is not on.
+waiter queue in first-in, first-out (FIFO) sequence. `identity` is empty if
+[mutual TLS (mTLS)](/operations/tls/#client-identity) is not on.
 
 ## Force-release
 

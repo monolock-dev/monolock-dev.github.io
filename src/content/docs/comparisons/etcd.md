@@ -53,7 +53,8 @@ consensus* needs a guarded resource that examines fencing tokens.
 
 **Session and lease.** The recommended Go path is the `clientv3/concurrency`
 package. A **Session** contains an etcd lease. `NewSession` calls
-`LeaseGrant` (the default TTL is 60 seconds). TTLs are whole seconds. The
+`LeaseGrant`. The default TTL (time to live) is 60 seconds, and TTLs are
+whole seconds. The
 client requests a TTL, but the server makes the decision. The session also
 starts a background `LeaseKeepAlive` stream. This stream refreshes the lease
 for the life of the client. When the lease expires, or when a client revokes
@@ -129,17 +130,18 @@ ends.
 
 **The client selects a fine-grained lease.** The etcd server grants TTLs in
 whole seconds. The monolock client selects any duration for its connection
-— milliseconds on a LAN. This is possible because the lease is only a
+— milliseconds on a local-area network (LAN). This is possible because the lease is only a
 failure detector, not a term of ownership. The heartbeat schedule comes
-from the lease (`lease / 4`, decreased by the smoothed RTT). The client
+from the lease (`lease / 4`, decreased by the smoothed round-trip time,
+RTT). The client
 stops its claim at `0.8 × lease`, *before* the deadline of the server. Thus
 the stale side of the race is always the holder, never the server. The etcd
 client learns about a lost lease through the keep-alive stream. The caution
 is comparable, but the minimum detection time is seconds, not milliseconds.
 
 **The handover is a push, not a watch.** The two systems have fair queues.
-etcd uses the wait chain with `create_revision`. monolock uses strict FIFO
-in the sequence of arrival. At handover, etcd deletes a key, and the watch
+etcd uses the wait chain with `create_revision`. monolock uses a strict
+first-in, first-out (FIFO) order — the sequence of arrival. At handover, etcd deletes a key, and the watch
 of the subsequent waiter reacts. The monolock server sends the `ACQUIRED`
 message to the promoted waiter on its own initiative — one one-way message
 after the socket of the owner closes.
@@ -157,14 +159,15 @@ the wall clock must not step back between the grants of the two processes.
 In usual operation, this condition is almost always true. A failure needs
 an unusual event:
 a wall clock that moves back exactly around a restart, for example because
-of an incorrect NTP configuration. The probability is near zero. And if
+of an incorrect NTP (Network Time Protocol) configuration. The probability is near zero. And if
 this event occurs, it is a problem for your full system — certificates,
 logs, caches, and databases — not only for the lock. But if your resource
 must have tokens with no conditions at all, this point makes etcd the
 correct selection.
 
 **Footprint.** monolock is one static Go binary, standard library only,
-with all data in memory. There is no WAL that needs an SSD, no history that
+with all data in memory. There is no write-ahead log (WAL) that needs an
+SSD, no history that
 needs compaction, no backend that needs defragmentation, and no quota alarm
 that needs an operator.
 

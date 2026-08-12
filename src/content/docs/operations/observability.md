@@ -25,7 +25,7 @@ selection of summaries instead of histograms is intentional.
 | `monolock_locks_held` | gauge | locks that have an owner at this time |
 | `monolock_waiters` | gauge | claims that wait, across all queues |
 | `monolock_acquires_total` | counter | granted ownerships, that is, issued fencing tokens |
-| `monolock_acl_denials_total` | counter | `ACQUIRE`s that the [ACL](/operations/acl/) refused |
+| `monolock_acl_denials_total` | counter | `ACQUIRE`s that the [access-control list (ACL)](/operations/acl/) refused |
 | `monolock_releases_total{reason}` | counter | ended ownerships: `graceful`, `expired`, `io_timeout`, `force` |
 | `monolock_protocol_errors_total{code}` | counter | sent `ERROR` messages by [wire code](/reference/errors/) |
 | `monolock_connections_accepted_total` | counter | accepted connections |

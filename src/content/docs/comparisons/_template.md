@@ -19,6 +19,12 @@ All articles use ASD-STE100 Simplified Technical English:
   "the correct selection".
 - Technical terms and proper nouns are exempt from the vocabulary rules
   (for example "fencing token", "keep-alive", "transaction pooling").
+- Abbreviations: spell out at the first use on each page — "first-in,
+  first-out (FIFO)", "access-control list (ACL)", "round-trip time (RTT)" —
+  then use the abbreviation alone. Do not spell out terms that the audience
+  knows: TCP, TLS, HTTP(S), API, JSON, DNS, OS, SQL, URL, URI, SSD, VM,
+  UTF-8, UTC, RFC, EOF. Proper names (SPIFFE, PEM, Redis commands, flag
+  names) stay as they are.
 - Keep direct quotations from external documentation verbatim, in quotes.
 
 ## Tone

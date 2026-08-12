@@ -55,7 +55,7 @@ timeout, an EOF, a connection error, a server shutdown, or a cancellation of
 `Do`'s own context. When the context is cancelled, the work that the lock
 guarded must stop. Call `Do` again to go into the queue for a new turn.
 There is no silent re-acquisition. A new turn is a new position at the back
-of the FIFO queue.
+of the first-in, first-out (FIFO) queue.
 
 <Aside type="note" title="Cancelling Do's context is a graceful stop, not a loss">
   If the client still waits in the queue, `Do` stops immediately. If the
@@ -83,7 +83,7 @@ next waiter and does not wait for the end of the lease.
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `Address` | — | `host:port` of the server, required |
-| `Dialer` | `&net.Dialer{}` | each type that has `DialContext`: a `*tls.Dialer` connects to a server that operates with [`-tls-cert`](/operations/tls/) (its client certificate is the client's [identity](/operations/tls/#client-identity) for the ACL and the audit log of the server); a `*net.Dialer` adjusts dial timeouts, keep-alives, or the source address |
+| `Dialer` | `&net.Dialer{}` | each type that has `DialContext`: a `*tls.Dialer` connects to a server that operates with [`-tls-cert`](/operations/tls/) (its client certificate is the client's [identity](/operations/tls/#client-identity) for the access-control list (ACL) and the audit log of the server); a `*net.Dialer` adjusts dial timeouts, keep-alives, or the source address |
 
 The client calculates all other values from the lease that you give to
 `Do`. The client sends a heartbeat each `lease/4`, minus a safety margin of
@@ -129,7 +129,8 @@ and joins nothing.
 ## TLS
 
 Give a `*tls.Dialer` to connect to a [TLS-enabled server](/operations/tls/).
-With mTLS, the client certificate is also the identity of the client:
+With mutual TLS (mTLS), the client certificate is also the identity of the
+client:
 
 ```go
 c := monolock.New(monolock.Config{

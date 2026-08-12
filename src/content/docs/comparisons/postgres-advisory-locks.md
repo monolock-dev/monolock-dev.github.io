@@ -95,7 +95,7 @@ question with one answer for all connections, not a selection for each lock.
 server gives the lock. The return of the blocked call is the notification.
 There is no separate push channel. The `try` functions return immediately.
 The manual gives **no promise about the sequence of the waiters**. There is
-no documented FIFO fairness for advisory locks.
+no documented first-in, first-out (FIFO) fairness for advisory locks.
 
 **Fencing.** There are no fencing tokens. A grant returns `void`, or a
 boolean value for the `try` functions. Nothing makes one grant different
@@ -122,9 +122,10 @@ Thus the differences are precise, not philosophical:
 - **The connection is the claim, with a lease.** Postgres frees the locks of
   a dead session when it sees the problem. The speed is a server-wide TCP
   question. In monolock, each session selects its own lease in the `ACQUIRE`
-  message. The client sends heartbeats on a schedule that includes the RTT.
+  message. The client sends heartbeats on a schedule that includes the
+  round-trip time (RTT).
   The server detects a dead holder in a maximum of one lease — milliseconds
-  on a LAN, if you select that. Each connection makes this selection. No
+  on a local-area network (LAN), if you select that. Each connection makes this selection. No
   server tuning is necessary ([how it works](/concepts/how-it-works/)).
 - **Strict FIFO with push promotion.** The server promotes the waiters in
   the sequence of their arrival. When the owner is gone, the server sends

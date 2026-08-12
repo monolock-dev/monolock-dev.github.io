@@ -37,7 +37,8 @@ flowchart LR
 ## The pattern
 
 - Two identical monolock instances on two machines, with the same
-  [configuration](/operations/configuration/), certificates, and ACL.
+  [configuration](/operations/configuration/), certificates, and
+  access-control list (ACL).
 - One address. Clients know only this address. At each moment, the address
   points to exactly one instance.
 - A failover mechanism watches the primary through
@@ -45,7 +46,8 @@ flowchart LR
   primary fails.
 - No replication and no connection between the two instances. The standby
   holds no locks and knows nothing about the primary.
-- NTP on the two machines. This is the only requirement that connects them.
+- NTP (Network Time Protocol) on the two machines. This is the only
+  requirement that connects them.
 
 The failover procedure has one hard rule: **fence the old primary**. Take
 the address away from it, or stop its process. The old server must not
@@ -110,7 +112,8 @@ correct tokens from its first grant.
 The failure can be a network flap, and the old primary can stay alive
 after the traffic moves. Two protections apply:
 
-- **The fence.** When the failover takes the VIP away, the old sessions
+- **The fence.** When the failover takes the virtual IP (VIP) address
+  away, the old sessions
   break, the old holders see silence, and they abandon their claims. A
   DNS or load-balancer switch does *not* break established connections to
   a live server. Then the fence must stop the old process. Without the
@@ -122,7 +125,8 @@ after the traffic moves. Two protections apply:
 
 ## What a failover loses
 
-- **The queues.** The FIFO sequence forms again in the sequence of the
+- **The queues.** The first-in, first-out (FIFO) sequence forms again in
+  the sequence of the
   reconnections. The old sequence is gone.
 - **The ownership.** Each holder loses its lock and stops its work for up
   to `0.8 × L` plus the switch time.
@@ -181,8 +185,8 @@ receives the traffic, the other is the backup.
   - The switch must break the connections to the old server. Many load
     balancers keep established connections to a live backend. DNS failover
     always keeps them. In these setups, the failover procedure must stop
-    the old process — this is the fence. With DNS, the TTL also adds to
-    `D`.
+    the old process — this is the fence. With DNS, the time to live (TTL)
+    of the record also adds to `D`.
 </Aside>
 
 ## Kubernetes
