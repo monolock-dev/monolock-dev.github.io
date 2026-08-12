@@ -3,6 +3,8 @@ title: Error codes
 description: Every ERROR code on the wire, and the retry contract the code ranges encode.
 ---
 
+import { Badge } from '@astrojs/starlight/components';
+
 An `ERROR` frame contains a one-byte code and a human-readable reason (see
 the [frame layout](/reference/protocol/#server-to-client)). Clients branch
 on the code only, never on the text.
@@ -11,17 +13,17 @@ on the code only, never on the text.
 
 | Code | Meaning | Class |
 | ---- | ------- | ----- |
-| `0x01` | server shutting down | server condition |
-| `0x02` | closed by administrator ([force-release / kick](/operations/admin-api/)) | server condition |
-| `0x10` | unsupported protocol version | client error |
-| `0x11` | first message must be ACQUIRE | client error |
-| `0x12` | duplicate ACQUIRE | client error |
-| `0x13` | unknown message type | client error |
-| `0x14` | empty lock name | client error |
-| `0x15` | lock name too long (> 255 bytes) | client error |
-| `0x16` | lock name is not valid UTF-8 | client error |
-| `0x17` | lease must be positive | client error |
-| `0x18` | not authorized for lock ([ACL](/operations/acl/)) | client error |
+| `0x01` | server shutting down | <Badge text="server condition" variant="caution" /> |
+| `0x02` | closed by administrator ([force-release / kick](/operations/admin-api/)) | <Badge text="server condition" variant="caution" /> |
+| `0x10` | unsupported protocol version | <Badge text="client error" variant="danger" /> |
+| `0x11` | first message must be ACQUIRE | <Badge text="client error" variant="danger" /> |
+| `0x12` | duplicate ACQUIRE | <Badge text="client error" variant="danger" /> |
+| `0x13` | unknown message type | <Badge text="client error" variant="danger" /> |
+| `0x14` | empty lock name | <Badge text="client error" variant="danger" /> |
+| `0x15` | lock name too long (> 255 bytes) | <Badge text="client error" variant="danger" /> |
+| `0x16` | lock name is not valid UTF-8 | <Badge text="client error" variant="danger" /> |
+| `0x17` | lease must be positive | <Badge text="client error" variant="danger" /> |
+| `0x18` | not authorized for lock ([ACL](/operations/acl/)) | <Badge text="client error" variant="danger" /> |
 
 ## The retry contract
 

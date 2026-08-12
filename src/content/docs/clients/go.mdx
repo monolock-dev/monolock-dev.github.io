@@ -3,6 +3,8 @@ title: Go client
 description: The official Go client — Do, DoRetry, configuration and error semantics.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 [monolock-go](https://github.com/monolock-dev/monolock-go) is the official Go
 client. One lock is one TCP connection. `Do` blocks until this process owns
 the named lock. `Do` then runs your function for exactly the time in which
@@ -55,14 +57,15 @@ guarded must stop. Call `Do` again to go into the queue for a new turn.
 There is no silent re-acquisition. A new turn is a new position at the back
 of the FIFO queue.
 
-A cancellation of `Do`'s own context is a **graceful stop, not a loss**. If
-the client still waits in the queue, `Do` stops immediately. If the function
-already runs, the cancellation only asks the function to stop. The client
-holds the lock and continues the heartbeats until the function stops and
-returns. Thus a usual shutdown does not give the lock to a different client
-while the work continues. The protection for a holder that cannot stop is
-the lease itself. Kill the process, and the lock goes to the next client in
-a maximum of one lease.
+<Aside type="note" title="Cancelling Do's context is a graceful stop, not a loss">
+  If the client still waits in the queue, `Do` stops immediately. If the
+  function already runs, the cancellation only asks the function to stop.
+  The client holds the lock and continues the heartbeats until the function
+  stops and returns. Thus a usual shutdown does not give the lock to a
+  different client while the work continues. The protection for a holder
+  that cannot stop is the lease itself. Kill the process, and the lock goes
+  to the next client in a maximum of one lease.
+</Aside>
 
 `Do` makes exactly one attempt. A dial failure, a connection loss in the
 queue, or a server rejection returns as an error, and

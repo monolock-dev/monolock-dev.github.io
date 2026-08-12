@@ -3,6 +3,8 @@ title: Writing a client
 description: What a correct monolock client in any language must do — a checklist with pseudocode.
 ---
 
+import { Aside, Steps } from '@astrojs/starlight/components';
+
 An official client is available for [Go](/clients/go/). Python, Node.js, and
 Rust clients are planned. Until then, or for a different language, you can
 write your own client. The [wire protocol](/reference/protocol/) is
@@ -56,10 +58,11 @@ The [heartbeat rules](/reference/protocol/#heartbeats) are normative:
 - stop your claim at `0.8 × lease` without a confirmation. Thus you always
   stop before the server removes you.
 
-The last point is the safety-critical one. The client must be the pessimist.
-Possibly your client can think that it holds a lock that the server has
-already released. Then your client is incorrect, also if it passes each
-happy-path test.
+<Aside type="danger" title="The client must be the pessimist">
+  The last point is the safety-critical one. Possibly your client can
+  think that it holds a lock that the server has already released. Then
+  your client is incorrect, also if it passes each happy-path test.
+</Aside>
 
 ### 4. Treat any reply as the acknowledgement
 
@@ -111,18 +114,26 @@ docker run -p 7070:7070 ghcr.io/monolock-dev/monolock
 Script these scenarios. The sequence is approximately the frequency with
 which they find bugs:
 
-1. two clients, one lock: the second client gets `WAITING`, then `ACQUIRED`
-   when the first client disconnects — *without* a sent message (this tests
-   rule 1);
-2. hold a lock for more than several heartbeat intervals (this tests the
-   schedule of rule 3);
-3. stop the network while the client holds the lock (a firewall rule, a
-   proxy that you kill): the client must stop its claim before the lease and
-   stop the work (this tests rules 3 and 8);
-4. a server restart while the client is in the queue: expect `ERROR 0x01`,
-   and connect again immediately (this tests rule 6);
-5. send a 300-byte name: expect `ERROR 0x15` and no retry (this tests
-   rule 6).
+<Steps>
+
+1. **Two clients, one lock.** The second client gets `WAITING`, then
+   `ACQUIRED` when the first client disconnects — *without* a sent message.
+   This tests rule 1.
+
+2. **Hold a lock for more than several heartbeat intervals.** This tests
+   the schedule of rule 3.
+
+3. **Stop the network while the client holds the lock** (a firewall rule, a
+   proxy that you kill). The client must stop its claim before the lease
+   and stop the work. This tests rules 3 and 8.
+
+4. **Restart the server while the client is in the queue.** Expect
+   `ERROR 0x01`, and connect again immediately. This tests rule 6.
+
+5. **Send a 300-byte name.** Expect `ERROR 0x15` and no retry. This tests
+   rule 6.
+
+</Steps>
 
 If you write a client, tell us. The plan is to show a list of community
 clients on this page.

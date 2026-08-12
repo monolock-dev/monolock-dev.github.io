@@ -145,6 +145,9 @@ Thus the differences are precise, not philosophical:
   are gone after a failover. monolock is openly a single point of
   coordination. When it is not available, new locks are not possible
   ([what monolock is not](/start/introduction/#what-monolock-is-not)).
+  Each of the two can return through a failover with lock-state loss —
+  Postgres to a replica, monolock to a
+  [standby](/operations/high-availability/).
   Postgres has mature durability and HA functions for your *data*. If you
   use them, you operate one process less. monolock is one more binary, but
   the binary is small.
@@ -159,7 +162,7 @@ Thus the differences are precise, not philosophical:
 | Fencing tokens | with each grant, the number always increases | none |
 | Handover latency | push; immediate after a controlled stop, ≤ one lease after a crash | the blocked call returns at the grant; the server sees a crash at the speed of the TCP settings |
 | Clock assumptions | monotonic durations only, no synchronized clocks | none for the locks |
-| Operation continues after a coordinator failure | no — single point of coordination | no — the lock state is only in the shared memory of the primary |
+| Operation continues after a coordinator failure | no — a [standby](/operations/high-availability/) shortens the gap, the state is lost | no — the lock state is only in the shared memory of the primary |
 | Operational footprint | one static Go binary, stdlib only | a full PostgreSQL server (frequently already in operation) |
 | New infrastructure | one small server | none, if you operate Postgres |
 

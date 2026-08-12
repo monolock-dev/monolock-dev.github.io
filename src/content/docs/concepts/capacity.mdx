@@ -3,6 +3,8 @@ title: Capacity & limits
 description: What bounds a monolock server — file descriptors — and how it behaves at the boundary.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 The server has no built-in connection limit and no built-in waiter-queue
 limit. Exactly one system resource controls the capacity. The failure mode at
 the boundary is deliberate and not fatal.
@@ -16,8 +18,11 @@ other process limits:
 - `LimitNOFILE=` in a [systemd unit](/operations/deployment/#systemd)
 - `--ulimit nofile=` for [Docker](/operations/deployment/#docker)
 
-Note: the Go runtime increases the soft limit to the hard limit at startup.
-Thus a low `ulimit -n` in an interactive shell does not apply to the server.
+<Aside type="note">
+  The Go runtime increases the soft limit to the hard limit at startup.
+  Thus a low `ulimit -n` in an interactive shell does not apply to the
+  server.
+</Aside>
 
 ## Why waiter queues need no limit
 

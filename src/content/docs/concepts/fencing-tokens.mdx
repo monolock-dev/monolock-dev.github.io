@@ -3,6 +3,8 @@ title: Fencing tokens
 description: Why liveness is not safety, and how fencing tokens let the guarded resource reject stale holders.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 When a connection is lost, the server moves the lock. This gives *liveness*:
 the lock never stays behind a dead holder for more than the lease. But this
 does not give *safety*. A GC cycle, a closed laptop lid, or a network problem
@@ -64,10 +66,15 @@ Put the check at the location where the write occurs:
 - **Your own service**: keep `max_seen_token` for each guarded entity, and
   reject requests that carry a smaller token.
 
-Tokens strictly increase across *all* locks, not for each lock. One global
-counter issues them. Thus a comparison of tokens is meaningful for one
-guarded resource, and the correct design is one lock for one guarded
-resource.
+<Aside type="caution" title="One lock for one guarded resource">
+  One global counter issues the tokens for *all* locks. Thus the order of
+  two tokens from two different locks says nothing about ownership: two
+  clients can hold two different locks at the same time, and one of them
+  simply got its grant later. A resource must compare only tokens that come
+  from the grants of *one* lock — only there a smaller token means a stale
+  holder. The correct design is therefore one lock for one guarded
+  resource.
+</Aside>
 
 The [Go client](/clients/go/) gives the token to your work function as an
 argument. A raw-protocol client reads the token from each `ACQUIRED` frame
@@ -75,11 +82,19 @@ argument. A raw-protocol client reads the token from each `ACQUIRED` frame
 
 ## The guarantee's bounds
 
-The server makes the token from its start time and a global grant counter.
-Nothing is persisted to disk. Thus the bounds of the guarantee are explicit:
-tokens continue to increase across a server restart **only if** the clock of
-the server does not go back between the restarts, and if there is a minimum
-of one second between the restarts.
+The server makes the token from the unix second of the latest grant and a
+global grant counter. The epoch moves forward with each grant. Thus a token
+is approximately the time of its grant, and nothing is persisted to disk.
+The bounds of the guarantee are explicit: the sequence continues across any
+two processes whose grants are more than one second apart — a restart, or a
+[standby failover](/operations/high-availability/) — **only if** the wall
+clock does not step back between the two grants.
+
+Across two machines, the same condition means synchronised clocks. In a
+failover, the first grant of the new server comes after the detection and
+the switch, thus more than one second after the last grant of the old
+server. The tokens of the new server are larger — if the clock of the new
+machine is not behind the clock of the old machine. NTP gives this.
 
 For a single-node server with no consensus and no disk, this is a deliberate
 trade-off. This page states the trade-off and does not hide it. If the

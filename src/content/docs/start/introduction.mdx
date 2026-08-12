@@ -3,10 +3,15 @@ title: Introduction
 description: What monolock is, what problem it solves, and when to pick it over a consensus-backed lock service.
 ---
 
+import { LinkButton, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
 monolock is a small TCP server for named locks: a distributed mutex without
 the distributed system. Many processes on many machines must agree that only
 one of them runs the nightly import, starts the deploy, or compacts the
 shard. monolock gives them one simple location for this agreement.
+
+<LinkButton href="/start/quickstart/">Quick start</LinkButton>
+<LinkButton href="/concepts/how-it-works/" variant="minimal">How it works</LinkButton>
 
 ## The idea
 
@@ -52,7 +57,10 @@ monolock is **simple by design**: a single point of coordination. There is no
 replication, no quorum, and no consensus. The advantages are a very small
 operational footprint and behavior that is easy to analyze. The cost is
 availability. When the server is down or restarts, new acquisitions are not
-possible until the server is available again.
+possible until the server is available again. A passive
+[standby](/operations/high-availability/) makes this window short. But the
+trade does not change: the lock state is lost, and the clients acquire
+again.
 
 This trade-off is correct for much real work: cron jobs, deploy mutexes, and
 leader election for tasks that permit a short coordination gap. The trade-off
@@ -67,7 +75,20 @@ not hide them.
 
 ## Where to go next
 
-- [Quick start](/start/quickstart/) — a server and a lock in two minutes.
-- [How it works](/concepts/how-it-works/) — sessions, leases, heartbeats, and
-  handover in detail.
-- [Wire protocol](/reference/protocol/) — the full byte-level reference.
+<CardGrid>
+  <LinkCard
+    title="Quick start"
+    href="/start/quickstart/"
+    description="A server and a lock in two minutes."
+  />
+  <LinkCard
+    title="How it works"
+    href="/concepts/how-it-works/"
+    description="Sessions, leases, heartbeats, and handover in detail."
+  />
+  <LinkCard
+    title="Wire protocol"
+    href="/reference/protocol/"
+    description="The full byte-level reference."
+  />
+</CardGrid>

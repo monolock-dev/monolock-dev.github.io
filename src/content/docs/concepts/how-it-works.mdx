@@ -3,6 +3,8 @@ title: How it works
 description: Sessions, leases, heartbeats, FIFO queues and handover — the complete mental model.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 One client owns a named lock and does the work. The other clients wait in a
 FIFO queue. After a controlled shutdown, the subsequent client takes the lock
 immediately. If a client stops or the network fails, the session becomes
@@ -42,12 +44,14 @@ the lock.
 
 ## The lease is a sliding window of silence
 
-The lease is **not** a fixed period after which the lock changes hands. The
-lease is a failure detector. The server records when it last received a
-message from a session (`lastSeenAt`). Each heartbeat starts this countdown
-again at the full lease. While heartbeats continue to arrive, a client can
-hold a lock without a time limit. The lease only controls how quickly the
-server detects a *dead* holder.
+<Aside type="note" title="A failure detector, not a deadline">
+  The lease is **not** a fixed period after which the lock changes hands.
+  The lease is a failure detector. The server records when it last received
+  a message from a session (`lastSeenAt`). Each heartbeat starts this
+  countdown again at the full lease. While heartbeats continue to arrive, a
+  client can hold a lock without a time limit. The lease only controls how
+  quickly the server detects a *dead* holder.
+</Aside>
 
 Each client selects its own lease in `ACQUIRE`, for its own connection. There
 is no server-side lease setting and no upper limit. The hold time of a lock
@@ -136,7 +140,8 @@ During a controlled server shutdown, the server tells every session that the
 server goes away (`ERROR` code `0x01`), and the connections close. This
 error has the classification *server condition*: the client has no problem.
 Thus the correct reaction is an immediate reconnection — to the restarted
-server or to its replacement — and a new position in the queue. The
+server or to its [replacement](/operations/high-availability/) — and a new
+position in the queue. The
 [ops endpoints](/operations/observability/) stay open for more time than the
 protocol listener. Thus health probes and metric collection continue through
 the full shutdown window.

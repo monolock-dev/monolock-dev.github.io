@@ -138,13 +138,14 @@ the mechanism that Kleppmann asked for and that Redlock does not have
 ([fencing tokens](/concepts/fencing-tokens/)). Two limits are important.
 antirez is correct: the resource must examine the tokens, or the tokens have
 no effect. And the monolock guarantee has known limits. The server makes the
-tokens from its start time and a counter in memory. The sequence continues
-after a restart only if the clock of the server does not go back, and if
-there is a minimum of one second between the restarts. In usual operation,
-these conditions are almost always true. Only an unusual event, for
-example a clock step to an earlier time exactly around a restart, can
-break them. The probability is near zero. And a system with this event has
-a problem that is much larger than one lock.
+tokens from the unix second of the latest grant and a counter in memory.
+The sequence continues across a restart or a
+[failover](/operations/high-availability/) only if the wall clock does not
+step back between the grants of the two processes. In usual operation, this
+condition is almost always true. Only an unusual event, for example a clock
+step to an earlier time exactly around a restart, can break it. The
+probability is near zero. And a system with this event has a problem that
+is much larger than one lock.
 
 **Strict FIFO, with push promotion.** Waiters go into a queue in the
 sequence of their arrival. The server sends a message to the new owner.
@@ -160,7 +161,9 @@ answer to the wall-clock warning in the Redis documentation.
 with five masters continues to give locks when a node fails. If the monolock
 server is not available, new acquisitions are not possible until the server
 is available again
-([what monolock is not](/start/introduction/#what-monolock-is-not)).
+([what monolock is not](/start/introduction/#what-monolock-is-not)). A
+passive [standby](/operations/high-availability/) makes the gap short, but
+the lock state does not move with the traffic.
 
 ## Side by side
 
@@ -172,7 +175,7 @@ is available again
 | Fencing tokens | with each grant, the number always increases | none; only a random value without a sequence |
 | Handover latency | push; immediate after a controlled stop, ≤ one lease after a crash | the subsequent satisfactory retry after `DEL` or expiry |
 | Clock assumptions | monotonic durations only, no synchronized clocks | wall-clock TTLs; Redlock assumes limited drift |
-| Operation continues after a coordinator failure | no — single point of coordination | Redlock: yes, for a minority of the N masters |
+| Operation continues after a coordinator failure | no — a [standby](/operations/high-availability/) shortens the gap, the state is lost | Redlock: yes, for a minority of the N masters |
 | Operational footprint | one static Go binary, stdlib only | Redis server(s); 5 masters for Redlock |
 | New infrastructure | one small server | none, if you operate Redis |
 

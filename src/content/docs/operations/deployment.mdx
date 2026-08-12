@@ -3,6 +3,8 @@ title: Deployment
 description: Running monolock under Docker, systemd and Kubernetes — one instance, done properly.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 monolock is a single process without state on disk. Thus a deployment has
 three primary parts: file descriptors ([capacity](/concepts/capacity/)),
 signal delivery (`SIGHUP` reloads and a controlled stop), and exactly one
@@ -24,15 +26,21 @@ flowchart LR
     M -->|stdout / file| A[(audit log)]
 ```
 
-**One instance is the design, not a limitation that you must remove.**
-monolock is a single point of coordination by design. Do not operate two
-instances behind one load balancer. Locks are in the memory of one server,
-and two servers are two independent lock spaces. Operate one instance,
-restart it quickly, and let the clients connect again. At shutdown, the
-server tells the clients to connect again ([error `0x01`](/reference/errors/)).
-A restart loses only the queue positions. The
-[fencing tokens](/concepts/fencing-tokens/) continue to protect the guarded
-resources.
+<Aside type="danger" title="One instance is the design, not a limitation">
+  monolock is a single point of coordination by design. Do not operate two
+  instances behind one load balancer. Locks are in the memory of one
+  server, and two servers are two independent lock spaces.
+</Aside>
+
+Operate one instance, restart it quickly, and let the clients connect
+again. At shutdown, the server tells the clients to connect again
+([error `0x01`](/reference/errors/)). A restart loses only the queue
+positions. The [fencing tokens](/concepts/fencing-tokens/) continue to
+protect the guarded resources.
+
+A passive standby behind a failover address is a different pattern, and it
+is safe: only one instance receives traffic at each moment. See
+[High availability](/operations/high-availability/).
 
 ## Docker
 

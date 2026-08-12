@@ -116,7 +116,9 @@ server that changes its memory. There is no proposal, no replication, and
 no fsync. The cost is the availability row in the table below, and this
 loss is a design decision. When the monolock server is down or restarts,
 no client can acquire a lock until the server is available again
-([what monolock is not](/start/introduction/#what-monolock-is-not)).
+([what monolock is not](/start/introduction/#what-monolock-is-not)). A
+passive [standby](/operations/high-availability/) makes this gap short.
+But it does not change the guarantee: the lock state is not replicated.
 
 **The connection is the claim.** There is no lease object, no session ID,
 and no unlock call. One TCP connection makes one claim. The close of the
@@ -148,11 +150,12 @@ lock key yourself. In the *two* systems, the guarded resource must do the
 comparison. No lock service can do it for you. The real difference is
 durability. The etcd revisions live in the Raft log. They stay correct
 after each failure that is smaller than the loss of the cluster. The
-monolock tokens keep their guarantee across restarts only under
+monolock tokens keep their guarantee across restarts and
+[failovers](/operations/high-availability/) only under
 [documented conditions](/concepts/fencing-tokens/#the-guarantees-bounds):
-the clock of the server must not go back between two restarts, and there
-must be a minimum of one second between the restarts. In usual operation,
-these conditions are almost always true. A failure needs an unusual event:
+the wall clock must not step back between the grants of the two processes.
+In usual operation, this condition is almost always true. A failure needs
+an unusual event:
 a wall clock that moves back exactly around a restart, for example because
 of an incorrect NTP configuration. The probability is near zero. And if
 this event occurs, it is a problem for your full system — certificates,
@@ -175,7 +178,7 @@ that needs an operator.
 | Fencing tokens | with each grant, the number always increases | the key revision can be a token; you get it and send it yourself |
 | Handover latency | push; immediate after a controlled stop, ≤ one lease after a crash | the watch reacts to the key deletion; immediate after unlock, ≤ TTL after a crash |
 | Clock assumptions | monotonic durations only, no synchronized clocks | no synchronized client clocks; the server counts the TTLs |
-| Operation continues after a coordinator failure | no — single point of coordination | yes — a minority of the members can fail |
+| Operation continues after a coordinator failure | no — a [standby](/operations/high-availability/) shortens the gap, the state is lost | yes — a minority of the members can fail |
 | Operational footprint | one static Go binary, stdlib only | a 3/5-node cluster, fsynced WAL, compaction + defragmentation + quota |
 | New infrastructure | one small server | a consensus cluster on low-latency disks |
 

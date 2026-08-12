@@ -87,7 +87,9 @@ client-selected leases with RTT-aware heartbeats, strict FIFO with push
 promotion, fencing tokens with each grant, monotonic time only, the
 single-binary footprint, and the honest disadvantage: no replication — when
 the server is down, new acquisitions are not possible
-(`/start/introduction/#what-monolock-is-not`).
+(`/start/introduction/#what-monolock-is-not`). Where the disadvantage
+appears, also mention that a passive standby shortens the gap without a
+change to the trade (`/operations/high-availability/`).
 
 When the article mentions the fencing-token guarantee of monolock, keep the
 honest framing: the guarantee across restarts has documented conditions
@@ -110,7 +112,7 @@ goes in the prose above.
 | Fencing tokens | with each grant, the number always increases | … |
 | Handover latency | push; immediate after a controlled stop, ≤ one lease after a crash | … |
 | Clock assumptions | monotonic durations only, no synchronized clocks | … |
-| Operation continues after a coordinator failure | no — single point of coordination | … |
+| Operation continues after a coordinator failure | no — a [standby](/operations/high-availability/) shortens the gap, the state is lost | … |
 | Operational footprint | one static Go binary, stdlib only | … |
 | New infrastructure | one small server | … |
 

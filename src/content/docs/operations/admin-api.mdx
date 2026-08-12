@@ -3,12 +3,17 @@ title: Admin API
 description: Lock introspection, force-release and kicking waiters over a local HTTP API.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 `-admin-listen 127.0.0.1:7071` starts an HTTP API for the operator. The API
-gives lock introspection, force-release, and removal of waiters. The bind
-address is the access control. The API has no authentication of its own. From
-an external location, you reach it through `ssh -L` or
-`kubectl port-forward`. If the address is not a loopback address, the server
-writes a warning to the log at startup.
+gives lock introspection, force-release, and removal of waiters.
+
+<Aside type="caution" title="The bind address is the access control">
+  The API has no authentication of its own. Keep it on a loopback address —
+  the server writes a warning to the log at startup if it is not one. From
+  an external location, you reach it through `ssh -L` or
+  `kubectl port-forward`.
+</Aside>
 
 | Endpoint | Meaning |
 | -------- | ------- |

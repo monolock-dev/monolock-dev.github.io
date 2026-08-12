@@ -3,6 +3,8 @@ title: ACL authorization
 description: Mapping mTLS identities to the lock names they may acquire, with glob rules and deny-by-default semantics.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 `-acl-file` points to a JSON file. The file maps client identities to the
 lock names that they can acquire. The flag requires `-tls-client-ca`. The
 identity comes from the verified
@@ -54,10 +56,12 @@ They are case sensitive, and the server does not normalize them. The
 `?match=` [filter](/operations/admin-api/) of the admin API uses the same
 glob language. Thus a pattern from a rule gives the same result in a query.
 
-The behavior of `*` across `/` is intentional. Lock names are flat strings.
-The `/` character is only a frequent character in lock names, not a hierarchy
-that the server knows. `nightly/*` matches `nightly/import` and also
-`nightly/a/b`.
+<Aside type="note" title="The star crosses the slash">
+  The behavior of `*` across `/` is intentional. Lock names are flat
+  strings. The `/` character is only a frequent character in lock names,
+  not a hierarchy that the server knows. `nightly/*` matches
+  `nightly/import` and also `nightly/a/b`.
+</Aside>
 
 ## Reload
 

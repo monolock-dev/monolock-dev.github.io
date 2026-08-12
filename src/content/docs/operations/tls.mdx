@@ -3,6 +3,8 @@ title: TLS & mTLS
 description: Encrypting the protocol port, authenticating clients with certificates, and rotating everything on SIGHUP.
 ---
 
+import { Aside, Steps } from '@astrojs/starlight/components';
+
 `-tls-cert` and `-tls-key` (PEM) enable TLS on the protocol port. The two
 flags are valid only together. `-tls-client-ca` adds a PEM CA pool for
 client certificates and enables **mTLS**. Each client must show a
@@ -75,27 +77,44 @@ handover.
 
 ## A lab PKI in four commands
 
-For local experiments (not production key management):
+<Aside type="caution">
+  This is for local experiments, not production key management.
+</Aside>
 
-```sh
-# CA
-openssl req -x509 -newkey ed25519 -nodes -subj "/CN=lab-ca" \
-  -keyout ca.key -out ca.crt -days 365
-# server certificate
-openssl req -newkey ed25519 -nodes -subj "/CN=monolock" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
-  -keyout server.key -out server.csr
-openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
-  -copy_extensions copy -out server.crt -days 90
-# client certificate with a SPIFFE-style identity
-openssl req -newkey ed25519 -nodes -subj "/CN=worker" \
-  -addext "subjectAltName=URI:spiffe://lab/worker/1" \
-  -keyout client.key -out client.csr && \
-openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
-  -copy_extensions copy -out client.crt -days 90
-```
+<Steps>
 
-Then start the server with `-tls-cert server.crt -tls-key server.key
--tls-client-ca ca.crt`. Connect with a client that uses `client.crt` /
-`client.key`, and that uses `ca.crt` as the server CA. The identity of the
-client everywhere in monolock is `spiffe://lab/worker/1`.
+1. **Create a CA.**
+
+   ```sh
+   openssl req -x509 -newkey ed25519 -nodes -subj "/CN=lab-ca" \
+     -keyout ca.key -out ca.crt -days 365
+   ```
+
+2. **Issue the server certificate.**
+
+   ```sh
+   openssl req -newkey ed25519 -nodes -subj "/CN=monolock" \
+     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+     -keyout server.key -out server.csr
+   openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+     -copy_extensions copy -out server.crt -days 90
+   ```
+
+3. **Issue a client certificate with a SPIFFE-style identity.**
+
+   ```sh
+   openssl req -newkey ed25519 -nodes -subj "/CN=worker" \
+     -addext "subjectAltName=URI:spiffe://lab/worker/1" \
+     -keyout client.key -out client.csr && \
+   openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+     -copy_extensions copy -out client.crt -days 90
+   ```
+
+4. **Start the server and connect.**
+
+   Start the server with `-tls-cert server.crt -tls-key server.key
+   -tls-client-ca ca.crt`. Connect with a client that uses `client.crt` /
+   `client.key`, and that uses `ca.crt` as the server CA. The identity of
+   the client everywhere in monolock is `spiffe://lab/worker/1`.
+
+</Steps>

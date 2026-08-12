@@ -3,7 +3,7 @@ title: Quick start
 description: Run a monolock server and take your first lock in two minutes.
 ---
 
-import { Tabs, TabItem, Steps, Aside } from '@astrojs/starlight/components';
+import { Tabs, TabItem, Steps, Aside, LinkCard, CardGrid } from '@astrojs/starlight/components';
 
 <Steps>
 
@@ -131,9 +131,20 @@ Read [Fencing tokens](/concepts/fencing-tokens/).
 
 ## Next steps
 
-- [How it works](/concepts/how-it-works/) — leases, heartbeats, and handover
-  in detail.
-- [Deployment](/operations/deployment/) — Docker, systemd, and Kubernetes
-  manifests.
-- [TLS & mTLS](/operations/tls/) — encrypt and authenticate before the
-  traffic leaves localhost.
+<CardGrid>
+  <LinkCard
+    title="How it works"
+    href="/concepts/how-it-works/"
+    description="Leases, heartbeats, and handover in detail."
+  />
+  <LinkCard
+    title="Deployment"
+    href="/operations/deployment/"
+    description="Docker, systemd, and Kubernetes manifests."
+  />
+  <LinkCard
+    title="TLS & mTLS"
+    href="/operations/tls/"
+    description="Encrypt and authenticate before the traffic leaves localhost."
+  />
+</CardGrid>

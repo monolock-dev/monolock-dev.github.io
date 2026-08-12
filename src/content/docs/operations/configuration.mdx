@@ -3,6 +3,8 @@ title: Configuration
 description: Every flag, its environment variable, and the SIGHUP reload contract.
 ---
 
+import { Tabs, TabItem, FileTree } from '@astrojs/starlight/components';
+
 There is no configuration file. Each setting is a flag, and each flag has a
 related environment variable. A **flag wins over the environment variable,
 and the environment variable wins over the default**. `monolock -h` prints
@@ -51,6 +53,21 @@ again. The server reads these files again:
 The server also opens the [audit log](/operations/audit/#rotation) again,
 for logrotate.
 
+With the [example configuration](#example) below, `SIGHUP` touches these
+files:
+
+<FileTree>
+
+- etc/monolock/
+  - server.crt reread — certificate rotation
+  - server.key reread — certificate rotation
+  - clients-ca.crt reread — certificate rotation
+  - acl.json reread — ACL reload
+- var/log/monolock/
+  - audit.jsonl reopened — for logrotate
+
+</FileTree>
+
 A failed reload keeps the previous state. An unsatisfactory certificate
 rotation causes stale certificates, not a stop. A broken ACL file keeps the
 old rules. If the audit log does not open again, the server continues to
@@ -60,31 +77,36 @@ with a broken configuration.
 
 ## Example
 
-```sh
-monolock \
-  -listen 0.0.0.0:7070 \
-  -ops-listen 0.0.0.0:9090 \
-  -admin-listen 127.0.0.1:7071 \
-  -tls-cert /etc/monolock/server.crt \
-  -tls-key /etc/monolock/server.key \
-  -tls-client-ca /etc/monolock/clients-ca.crt \
-  -acl-file /etc/monolock/acl.json \
-  -audit-log /var/log/monolock/audit.jsonl \
-  -log-format json
-```
+The same configuration in the two forms. The environment variables are
+useful for containers:
 
-The same configuration through the environment variables (useful for
-containers):
-
-```sh
-MONOLOCK_LISTEN_ADDRESS=0.0.0.0:7070 \
-MONOLOCK_OPS_LISTEN_ADDRESS=0.0.0.0:9090 \
-MONOLOCK_ADMIN_LISTEN_ADDRESS=127.0.0.1:7071 \
-MONOLOCK_TLS_CERT=/etc/monolock/server.crt \
-MONOLOCK_TLS_KEY=/etc/monolock/server.key \
-MONOLOCK_TLS_CLIENT_CA=/etc/monolock/clients-ca.crt \
-MONOLOCK_ACL_FILE=/etc/monolock/acl.json \
-MONOLOCK_AUDIT_LOG=/var/log/monolock/audit.jsonl \
-MONOLOCK_LOG_FORMAT=json \
-monolock
-```
+<Tabs syncKey="config-style">
+  <TabItem label="Flags">
+    ```sh
+    monolock \
+      -listen 0.0.0.0:7070 \
+      -ops-listen 0.0.0.0:9090 \
+      -admin-listen 127.0.0.1:7071 \
+      -tls-cert /etc/monolock/server.crt \
+      -tls-key /etc/monolock/server.key \
+      -tls-client-ca /etc/monolock/clients-ca.crt \
+      -acl-file /etc/monolock/acl.json \
+      -audit-log /var/log/monolock/audit.jsonl \
+      -log-format json
+    ```
+  </TabItem>
+  <TabItem label="Environment variables">
+    ```sh
+    MONOLOCK_LISTEN_ADDRESS=0.0.0.0:7070 \
+    MONOLOCK_OPS_LISTEN_ADDRESS=0.0.0.0:9090 \
+    MONOLOCK_ADMIN_LISTEN_ADDRESS=127.0.0.1:7071 \
+    MONOLOCK_TLS_CERT=/etc/monolock/server.crt \
+    MONOLOCK_TLS_KEY=/etc/monolock/server.key \
+    MONOLOCK_TLS_CLIENT_CA=/etc/monolock/clients-ca.crt \
+    MONOLOCK_ACL_FILE=/etc/monolock/acl.json \
+    MONOLOCK_AUDIT_LOG=/var/log/monolock/audit.jsonl \
+    MONOLOCK_LOG_FORMAT=json \
+    monolock
+    ```
+  </TabItem>
+</Tabs>

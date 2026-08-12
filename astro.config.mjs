@@ -150,6 +150,10 @@ export default defineConfig({
 						{ label: 'Admin API', slug: 'operations/admin-api' },
 						{ label: 'Observability', slug: 'operations/observability' },
 						{ label: 'Deployment', slug: 'operations/deployment' },
+					{
+						label: 'High availability',
+						slug: 'operations/high-availability',
+					},
 					],
 				},
 				{
