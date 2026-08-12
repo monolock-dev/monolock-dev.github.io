@@ -1,0 +1,93 @@
+---
+import SiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
+import Search from '@astrojs/starlight/components/Search.astro';
+---
+
+<div class="bar">
+	<div class="brand"><SiteTitle /></div>
+	<div class="search"><Search /></div>
+	<nav class="links">
+		<a class="nav-link" href="/start/quickstart/">Quick start</a>
+		<a class="nav-link" href="/concepts/how-it-works/">How it works</a>
+		<a class="nav-link" href="/comparisons/redis/">Comparisons</a>
+		<a class="nav-link" href="/reference/protocol/">Protocol</a>
+		<a class="gh" href="https://github.com/monolock-dev/monolock">GitHub</a>
+	</nav>
+</div>
+
+<style>
+	.bar {
+		height: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 32px;
+	}
+
+	.brand {
+		display: flex;
+		align-items: center;
+	}
+
+	.brand :global(.site-title img) {
+		height: 22px;
+		width: auto;
+	}
+
+	.search {
+		flex: 1;
+		display: flex;
+		justify-content: center;
+		max-width: 24rem;
+	}
+
+	.search :global(> *) {
+		width: 100%;
+	}
+
+	.links {
+		display: flex;
+		align-items: center;
+		gap: 28px;
+		font-size: 15px;
+	}
+
+	.nav-link {
+		color: var(--ml-text-muted);
+		text-decoration: none;
+		transition: color 0.13s ease;
+	}
+
+	.nav-link:hover {
+		color: var(--sl-color-white);
+	}
+
+	.gh {
+		color: var(--sl-color-white);
+		border: 1px solid var(--ml-border-strong);
+		padding: 6px 14px;
+		border-radius: 6px;
+		font-size: 14px;
+		text-decoration: none;
+		transition:
+			color 0.13s ease,
+			border-color 0.13s ease;
+	}
+
+	.gh:hover {
+		border-color: var(--sl-color-accent);
+		color: var(--sl-color-accent);
+	}
+
+	@media (max-width: 1280px) {
+		.nav-link {
+			display: none;
+		}
+	}
+
+	@media (max-width: 800px) {
+		.gh {
+			display: none;
+		}
+	}
+</style>
