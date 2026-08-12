@@ -1,191 +1,219 @@
 ---
 title: "monolock vs Redis & Redlock"
-description: "Redis distributed lock (SET NX PX, Redlock) compared with monolock: fencing tokens, TTL vs connection-scoped ownership, FIFO queues, and when to pick a Redlock alternative."
+description: "A comparison of Redis locks (SET NX PX, Redlock) and monolock: fencing tokens, TTL and connection ownership, FIFO queues, and when monolock is a Redlock alternative."
 ---
 
-Redis locks are a key with a TTL: whoever sets the key owns the lock until the
-key expires or is deleted. monolock locks are a TCP connection: whoever holds
-the connection owns the lock, and closing it is the release. If you already
-run Redis and your locks are about efficiency — avoiding duplicate work, not
-preventing corruption — a single-instance Redis lock is hard to beat. If you
-want fencing tokens, a FIFO queue, and a holder that finds out it lost the
-lock *before* the server hands it to someone else, that is what monolock is
-built around.
+A Redis lock is a key that has a TTL. The client that sets the key is the
+owner of the lock. The lock stops when the key expires or when a client
+deletes the key. A monolock lock is a TCP connection. The client that holds
+the connection is the owner of the lock. When the connection closes, the
+server releases the lock.
+
+Possibly you operate Redis, and your locks only prevent unnecessary work and
+do not prevent damage to data. Then a Redis lock on one instance is a good
+solution. But possibly you want fencing tokens, a FIFO queue, and a holder
+that knows about a lost lock before the server gives the lock to a different
+client. monolock is made for this.
 
 ## Background
 
-Redis was never designed as a lock service; it grew one because it was
-already there. The pattern is old and simple: create a key with `SET NX` and
-a TTL, delete it when done. In 2014 Salvatore Sanfilippo (antirez), Redis's
-author, wrote up a more careful version and a distributed extension called
-**Redlock**: run the same acquisition against N independent Redis masters
-(typically five), and consider the lock held if a majority accepted it within
-a fraction of the TTL. Redlock is still the canonical algorithm on the Redis
-documentation site, with client implementations in most languages.
+Redis is a data store, not a lock service. But users made locks with Redis
+because Redis was available. The procedure is old and simple. Make a key with
+the `SET NX` command and a TTL. Delete the key when the work is complete.
 
-In 2016 Martin Kleppmann published "How to do distributed locking", the
-critique that has shaped every conversation about Redis locks since. His
-first argument applies to *any* lock with an expiry: a client can pause — a
-stop-the-world GC cycle, a page fault, a preempted VM — for longer than the
-TTL, wake up believing it still holds the lock, and write to the guarded
-resource after the lock has moved on. His proposed fix is the **fencing
-token**: a number that increases with every grant, checked by the resource
-itself, so a stale holder's writes arrive stamped with an old token and get
-rejected. Redlock, he noted, "does not have any facility for generating
-fencing tokens." His second argument was aimed at Redlock specifically: its
-safety analysis assumes bounded clock drift and bounded pauses — a
-synchronous system model — and Redis expiry uses the wall clock, not a
-monotonic one.
+In 2014, Salvatore Sanfilippo (antirez), the author of Redis, wrote a more
+careful version of this procedure. He also wrote a distributed extension with
+the name **Redlock**. Redlock does the same acquisition on N independent
+Redis masters, usually five. The lock is valid if a majority of the masters
+accept it in a fraction of the TTL. Redlock is the standard algorithm in the
+Redis documentation. Client implementations are available in most languages.
 
-antirez replied in "Is Redlock safe?". On clocks, he argued the requirement
-is modest — processes only need to count *relative* time with a bounded error
-rate, and Redlock re-checks elapsed time after acquisition, so unbounded
-message delays cannot fool it. On fencing, he argued that if the guarded
-resource can check tokens, "you probably don't need a distributed lock at
-all, or at least you don't need a lock with strong guarantees" — and that
-Redlock's random value can serve as a check-and-set token, albeit without
-ordering. Neither side conceded. Today the Redis documentation links both
-posts and states plainly: "You should implement fencing tokens" and "Redis is
-not using monotonic clock for TTL expiration mechanism."
+In 2016, Martin Kleppmann wrote the article "How to do distributed locking".
+This article changed all subsequent discussions about Redis locks. His first
+argument is applicable to each lock that has an expiry time. A client can
+stop for more time than the TTL. Possible causes are a stop-the-world GC
+cycle, a page fault, or a preempted VM. The client then continues, thinks
+that it holds the lock, and writes to the resource. But the lock is not
+valid. His solution is the **fencing token**: a number that increases with
+each grant. The resource examines the token and rejects writes that have an
+old token. He wrote that Redlock "does not have any facility for generating
+fencing tokens". His second argument is applicable only to Redlock. The
+safety analysis of Redlock is correct only with limits on clock drift and on
+pauses. And Redis expiry uses the wall clock, not a monotonic clock.
 
-monolock's design reads like a response to that debate: fencing tokens on
-every grant, monotonic time only, and a client-side timeout that fires before
-the server-side lease — the Kleppmann failure modes, addressed one by one,
-within the honest limits of a single-node service.
+antirez replied in the article "Is Redlock safe?". About clocks, he wrote
+that the requirement is small. Processes must only measure relative time with
+a small error. Redlock also measures the elapsed time again after the
+acquisition. Thus unlimited message delays cannot cause an incorrect result.
+About fencing, he wrote that a resource that can examine tokens possibly
+does not need a distributed lock with strong guarantees. He also wrote that
+the random value of Redlock can operate as a check-and-set token, but
+without a sequence. The two authors did not agree. Today the Redis
+documentation refers to the two articles. It tells you to implement fencing
+tokens. It also tells you that Redis does not use a monotonic clock for TTL
+expiration.
 
-## How Redis implements locking
+The design of monolock is a reply to this discussion: fencing tokens with
+each grant, monotonic time only, and a client-side timeout that occurs
+before the server-side lease. It is a solution for each Kleppmann failure
+mode, in the known limits of a single-node service.
 
-**Single instance.** The lock is a key created with
-`SET resource_name random_value NX PX 30000`: set only if absent, with a TTL.
-The random value must be unique per client and attempt, because release must
-be token-checked — delete the key only if it still holds *your* value, via a
-small Lua script (or the `DELEX` command since Redis 8.4); a plain `DEL`
-could remove a lock already expired and re-acquired by someone else. The TTL
-is the "lock validity time": the client must finish within it, and the Redis
-docs are explicit that mutual exclusion "is only limited to a given window of
-time from the moment the lock is acquired."
+## How Redis makes a lock
 
-**Extension.** A client that needs longer sends a Lua script that extends the
-TTL if the key still holds its value. Mature clients automate this: Redisson,
-the main Java client, runs a "lock watchdog" that prolongs the expiration
-(default `lockWatchdogTimeout`, 30 seconds) for as long as the holder's
-process is alive.
+**One instance.** The lock is a key. The client makes the key with the
+command `SET resource_name random_value NX PX 30000`. This command sets the
+key only if the key is not there, and it sets a TTL. The random value must be
+different for each client and for each attempt. The reason: the release must
+occur only if the key contains your value. A small Lua script does this check
+(or the `DELEX` command, available since Redis 8.4). A simple `DEL` command
+is not safe. It can delete a lock that expired and that a different client
+acquired again. The TTL is the validity time of the lock. The client must
+complete its work in this time. The Redis documentation tells you that
+mutual exclusion is applicable only in this window of time.
 
-**Dead-holder detection** is the TTL itself. A crashed holder is discovered
-only when the key expires — there is no connection or session tied to the
-lock, so nothing faster is possible. A holder that forgets to release, or
-crashes after acquiring, leaves the lock stuck for the full TTL.
+**Extension.** A client that needs more time sends a Lua script. The script
+extends the TTL if the key contains the value of the client. Mature client
+libraries do this automatically. Redisson, the primary Java client, has a
+"lock watchdog". The watchdog extends the expiration (default
+`lockWatchdogTimeout`, 30 seconds) while the process of the holder is alive.
 
-**Waiting.** There is no queue in the pattern itself: contenders retry
-`SET NX` in a loop, and the docs recommend a random delay to desynchronize
-them. Client libraries improve on this — Redisson notifies waiters via
-pub/sub rather than polling, and offers a separate *fair lock* that
-"guarantees that threads will acquire it in is same order they requested it."
-Fairness is an opt-in library feature, not a property of the lock.
+**Detection of a dead holder.** The TTL is the only detection. If a holder
+stops because of a crash, the other clients know it only when the key
+expires. No connection and no session is attached to the lock. Thus a faster
+detection is not possible. If a holder does not release the lock, or stops
+after the acquisition, the lock stays for the full TTL.
 
-**Redlock** layers the single-instance pattern over N independent masters:
-acquire on all in parallel, succeed if a majority accepted within the
-validity time, subtract the elapsed time and a clock-drift allowance. It
-survives the crash of a minority of Redis nodes, at the price of the clock
-assumptions above — plus operational care (delayed restarts or
-`fsync=always`) so a crashed node cannot rejoin and re-grant a lock it
-forgot.
+**The wait procedure.** The pattern has no queue. Clients that wait send the
+`SET NX` command again and again in a loop. The documentation recommends a
+random delay between the attempts. Client libraries make this better.
+Redisson sends a signal to the waiters through pub/sub and does not poll.
+Redisson also has an optional *fair lock*. This lock gives the lock to the
+threads in the sequence of their requests. Fairness is a feature of the
+library, not a property of the lock.
 
-**Fencing.** Neither the single-instance pattern nor Redlock issues an
-ordered fencing token. The random value can be used for check-and-set at the
-resource, as antirez suggests, but it carries no ordering, and wiring any of
-it into the guarded resource is entirely the user's job.
+**Redlock.** Redlock uses the one-instance pattern on N independent masters.
+The client tries the acquisition on all the masters at the same time. The
+acquisition is satisfactory if a majority of the masters accept it in the
+validity time. The client subtracts the elapsed time and a margin for clock
+drift. Redlock continues to operate if a minority of the Redis nodes fail.
+The costs are the clock assumptions above and careful operation. Examples of
+careful operation are delayed restarts or `fsync=always`. Without this care,
+a node that had a crash can start again and give the same lock two times.
 
-## How monolock differs
+**Fencing.** The one-instance pattern and Redlock do not make fencing tokens
+that have a sequence. You can use the random value for a check-and-set at the
+resource, as antirez recommends. But the random value has no sequence. And
+the connection of all this to the resource is fully your task.
 
-**Ownership is a connection, not a key.** One TCP connection makes one claim
-on one lock; closing the connection is the release
-([how it works](/concepts/how-it-works/)). There is no release command to
-forget, no Lua script to get subtly wrong, and no lock left stuck for a TTL
-because a process crashed after acquiring — if the process dies, the kernel
-closes the socket and the next waiter is promoted immediately.
+## How monolock is different
 
-**The lease is a failure detector, not a deadline.** A Redis TTL is a budget
-your work must fit into (or a watchdog must keep topping up). A monolock
-lease is a sliding window of silence: heartbeats reset it, and a lock can be
-held forever. Each client picks its own lease per connection, so detection
-speed is a per-client choice rather than a global policy.
+**The owner is a connection, not a key.** One TCP connection makes one claim
+on one lock. When the connection closes, the server releases the lock
+([how it works](/concepts/how-it-works/)). There is no release command that
+you can forget. There is no Lua script that you can write incorrectly. A
+crash does not keep a lock for a full TTL. If the process stops, the kernel
+closes the socket. The server then immediately gives the lock to the next
+waiter.
 
-**A stale holder finds out first.** This is the sharpest contrast with the
-GC-pause scenario. A paused Redis lock holder silently loses the key and has
-no way to know until its next command. A monolock client gives up on its own
-at 0.8 × lease without a heartbeat confirmation — *before* the server's lease
-expires — so a holder never believes in a lock the server has already moved
-on from. The unbounded remainder of the window (writes already in flight) is
-what fencing is for.
+**The lease is a failure detector, not a deadline.** A Redis TTL is a time
+limit for your work, or a watchdog must extend it. A monolock lease is a
+window of silence that moves. Each heartbeat starts the window again. A
+client can hold a lock without a time limit. Each client selects its own
+lease for its connection. Thus the detection speed is a selection of each
+client, not a global policy.
 
-**Fencing tokens on every grant.** Every `ACQUIRED` carries a `uint64`
-strictly larger than every earlier grant, ready to be applied as a
-conditional write at the resource — the mechanism Kleppmann asked for and
-Redlock lacks ([fencing tokens](/concepts/fencing-tokens/)). To be fair in
-both directions: antirez is right that the resource must cooperate for
-fencing to mean anything, and monolock's own guarantee has documented
-bounds — tokens are derived from server start time and an in-memory counter,
-so they survive restarts only if the server's clock does not step backwards
-and restarts are at least a second apart.
+**A stale holder knows it first.** This is the largest difference in the
+GC-pause scenario. A Redis holder that has a pause loses the key and does
+not know it. It finds the problem only with its subsequent command. A
+monolock client stops its claim at 0.8 × lease if it gets no heartbeat
+confirmation. This occurs before the lease expires on the server. Thus a
+holder does not think that it holds a lock that the server gave to a
+different client. Writes that are already in flight are the task of the
+fencing tokens.
 
-**Strict FIFO, promoted by push.** Waiters queue in arrival order and the new
-owner is notified on the server's initiative — no retry loops, no random
-back-off, no thundering herd on release. Handover is immediate on graceful
-exit and at most one lease after a crash.
+**Fencing tokens with each grant.** Each `ACQUIRED` message contains a
+`uint64` number. This number is larger than the number of each earlier
+grant. You can use it as a condition for a write at the resource. This is
+the mechanism that Kleppmann asked for and that Redlock does not have
+([fencing tokens](/concepts/fencing-tokens/)). Two limits are important.
+antirez is correct: the resource must examine the tokens, or the tokens have
+no effect. And the monolock guarantee has known limits. The server makes the
+tokens from its start time and a counter in memory. The sequence continues
+after a restart only if the clock of the server does not go back, and if
+there is a minimum of one second between the restarts. In usual operation,
+these conditions are almost always true. Only an unusual event, for
+example a clock step to an earlier time exactly around a restart, can
+break them. The probability is near zero. And a system with this event has
+a problem that is much larger than one lock.
 
-**Monotonic time only.** Only durations cross the wire; both sides use
-monotonic clocks exclusively, so an NTP step changes nothing — a direct
-answer to the wall-clock caveat in the Redis docs.
+**Strict FIFO, with push promotion.** Waiters go into a queue in the
+sequence of their arrival. The server sends a message to the new owner.
+There are no retry loops and no random delays. When a lock becomes free,
+only one waiter gets a message. The handover is immediate after a controlled
+stop. After a crash, the handover occurs in a maximum of one lease.
 
-**The honest downside:** monolock is a single point of coordination. Redlock
-over five masters keeps granting locks when a node dies; a down monolock
-server means no new acquisitions until it is back
+**Monotonic time only.** Only durations go across the network. The two sides
+use only monotonic clocks. Thus an NTP step has no effect. This is a direct
+answer to the wall-clock warning in the Redis documentation.
+
+**The disadvantage:** monolock is a single point of coordination. Redlock
+with five masters continues to give locks when a node fails. If the monolock
+server is not available, new acquisitions are not possible until the server
+is available again
 ([what monolock is not](/start/introduction/#what-monolock-is-not)).
 
 ## Side by side
 
 | | monolock | Redis / Redlock |
 | --- | --- | --- |
-| Ownership model | one TCP connection = one claim | key with TTL, random value |
-| Dead-holder detection | silence for a client-chosen lease | key expiry after full TTL |
-| Queue / fairness | strict FIFO | none; retry loops (fair lock via Redisson) |
-| Fencing tokens | on every grant, monotonically increasing | none; unordered random value only |
-| Handover latency | push; immediate on graceful exit, ≤ lease on crash | next successful retry after `DEL` or expiry |
-| Clock assumptions | monotonic durations only, no synchronized clocks | wall-clock TTLs; Redlock assumes bounded drift |
-| Survives coordinator failure | no — single point of coordination | Redlock: yes, up to a minority of N masters |
-| Operational footprint | single static Go binary, stdlib only | Redis server(s); 5 masters for Redlock |
-| Extra infra needed | one small server | none if you already run Redis |
+| Ownership model | one TCP connection = one claim | key with a TTL and a random value |
+| Detection of a dead holder | silence for a client-selected lease | key expiry after the full TTL |
+| Queue / fairness | strict FIFO | none; retry loops (fair lock with Redisson) |
+| Fencing tokens | with each grant, the number always increases | none; only a random value without a sequence |
+| Handover latency | push; immediate after a controlled stop, ≤ one lease after a crash | the subsequent satisfactory retry after `DEL` or expiry |
+| Clock assumptions | monotonic durations only, no synchronized clocks | wall-clock TTLs; Redlock assumes limited drift |
+| Operation continues after a coordinator failure | no — single point of coordination | Redlock: yes, for a minority of the N masters |
+| Operational footprint | one static Go binary, stdlib only | Redis server(s); 5 masters for Redlock |
+| New infrastructure | one small server | none, if you operate Redis |
 
-## When to choose Redis
+## When Redis is the correct selection
 
-- You already operate Redis. A lock that needs no new infrastructure, no new
+- You operate Redis. A lock that needs no new infrastructure, no new
   deployment, and no new failure domain is a real advantage.
-- Your locks are efficiency locks — deduplicating work where an occasional
-  double execution is annoying but harmless. Kleppmann himself endorses a
-  single Redis instance for exactly this case.
-- You need very high lock throughput at sub-millisecond latency; an in-memory
-  key operation is about as cheap as acquisition gets.
-- You want a mature, batteries-included client ecosystem — Redisson alone
-  ships watchdog renewal, fair locks, read-write locks, and semaphores.
-- You need lock acquisition to survive the loss of a single coordinator node
-  without failing over: Redlock over N independent masters does this;
-  monolock by design does not.
+- Your locks are efficiency locks. They prevent unnecessary double work. A
+  double execution is not dangerous. Kleppmann recommends one Redis instance
+  for exactly this case.
+- Your locks have a short life, and there are many acquisitions each second.
+  A Redis client opens a connection one time and sends thousands of commands
+  through it. A monolock claim is a connection. Thus each lock needs a new
+  TCP handshake (and a TLS handshake, if you use TLS) and a socket close.
+  The latency of one acquisition is almost equal for the two tools. But at a
+  high rate of short locks, Redis gives more throughput.
+- You need more primitives than a mutex: read-write locks, semaphores, or
+  count-down latches. Redisson has them. monolock has only one primitive,
+  the exclusive named lock. This is by design.
+- The lock service must continue when one coordinator node fails. Redlock
+  with N independent masters does this. monolock, by design, does not.
 
-## When to choose monolock
+## When monolock is the correct selection
 
-- Cron-style jobs, deploy mutexes, and leader election that tolerate a brief
-  coordination gap — work where correctness matters enough to want fencing,
-  but not enough to justify a consensus cluster.
-- You want fencing tokens issued by the lock service rather than built by
-  hand, and a resource-side check that is one integer comparison.
-- Forgotten releases and TTL tuning have bitten you: connection-scoped
-  ownership removes the release call, and the lease is a detection speed, not
-  a work deadline.
-- Contention should be fair and quiet: strict FIFO with push promotion
-  instead of randomized retry loops.
-- You do not run Redis and do not want to start for the sake of a lock: one
-  static binary is the entire footprint.
+- Cron jobs, deploy mutexes, and leader election that permit a short
+  coordination gap. Correct operation is sufficiently important for fencing
+  tokens, but not sufficiently important for a consensus cluster.
+- You want fencing tokens from the lock service, not tokens that you make
+  yourself. The check at the resource is one integer comparison.
+- Forgotten releases and TTL adjustments caused problems for you before.
+  Connection ownership removes the release call. The lease is a detection
+  speed, not a work deadline.
+- Contention must be fair and quiet: strict FIFO with push promotion, not
+  retry loops with random delays.
+- You do not operate Redis, and you do not want to start Redis only for a
+  lock. One static binary is the full footprint.
+- A small client is important to you. Many Redisson functions only correct
+  the weak points of the key-with-TTL primitive: watchdog renewal, pub/sub
+  signals, fair-lock records, and release scripts that examine the token.
+  In monolock, the protocol contains these functions. Thus a client is one
+  page of code ([writing a client](/clients/writing-a-client/)).
 
 ## Sources
 

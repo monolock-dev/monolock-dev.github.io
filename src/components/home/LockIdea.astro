@@ -69,7 +69,7 @@
 					</thead>
 					<tbody>
 						<tr>
-							<td>Graceful (connection closed)</td>
+							<td>Controlled stop (connection closed)</td>
 							<td class="imm">immediate</td>
 						</tr>
 						<tr>
@@ -159,7 +159,7 @@
 			const next = queue[0];
 			promote(
 				next
-					? `${old} stopped answering → the server waits out ${lease} of silence, then promotes ${next.name} with a larger token.`
+					? `${old} stopped answering → after ${lease} of silence the server promotes ${next.name} with a larger token.`
 					: `${old} stopped answering → lock released after ${lease} of silence.`
 			);
 		});

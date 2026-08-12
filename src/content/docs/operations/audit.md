@@ -3,11 +3,12 @@ title: Audit log
 description: A JSON-lines stream of every lock ownership change — events, fields, and logrotate integration.
 ---
 
-`-audit-log` enables the audit log: a stream of JSON lines recording every
-change of lock ownership. The destination is a file path, or `-` for stdout.
-It is separate from the diagnostic log (which goes to stderr) and independent
-of its level: audit is either fully on or off. Storage, rotation and delivery
-are external — logrotate, the container log pipeline and so on.
+`-audit-log` turns on the audit log: a stream of JSON lines that records
+each change of lock ownership. The destination is a file path, or `-` for
+stdout. The audit log is separate from the diagnostic log, which goes to
+stderr. The audit log is also independent of the diagnostic log level: audit
+is fully on or fully off. Storage, rotation, and delivery are external
+tasks, for example logrotate or the container log pipeline.
 
 ```json
 {"time":"2026-08-08T12:00:00Z","event":"granted","lock":"nightly-import","identity":"spiffe://prod/worker/1","remote_addr":"10.0.0.5:52114","token":27262976001,"wait_ms":0}
@@ -15,26 +16,25 @@ are external — logrotate, the container log pipeline and so on.
 
 ## Events
 
-Every event carries `time` (UTC, RFC 3339), `event`, `lock`, `identity`
-(empty without [mTLS](/operations/tls/#client-identity)) and `remote_addr`,
-plus:
+Each event contains `time` (UTC, RFC 3339), `event`, `lock`, `identity`
+(empty without [mTLS](/operations/tls/#client-identity)), and `remote_addr`.
+Each event type adds these fields:
 
 | Event | Extra fields | Meaning |
 | ----- | ------------ | ------- |
-| `granted` | `token`, `wait_ms` | the session became the owner after waiting `wait_ms` |
+| `granted` | `token`, `wait_ms` | the session became the owner after a wait of `wait_ms` |
 | `released` | `token`, `held_ms`, `reason` | an ownership ended; `reason` is `graceful`, `expired`, `io_timeout` or `force` |
-| `denied` | — | an `ACQUIRE` refused by the [ACL](/operations/acl/) |
-| `force_release` | `token` | the admin [force-released](/operations/admin-api/) the lock (the kicked session also emits `released` with reason `force`) |
-| `kick_waiter` | — | the admin kicked a waiter out of a queue |
+| `denied` | — | the [ACL](/operations/acl/) refused an `ACQUIRE` |
+| `force_release` | `token` | the admin [force-released](/operations/admin-api/) the lock (the disconnected session also gets a `released` event with reason `force`) |
+| `kick_waiter` | — | the admin removed a waiter from a queue |
 
-In the stream a `released` always precedes the `granted` of the next owner of
-the same lock, so the history of any one lock reads as a clean alternation —
-no overlapping ownerships, ever.
+In the stream, a `released` event always comes before the `granted` event of
+the next owner of the same lock. Thus the history of one lock is a clean
+alternation. Ownerships never overlap.
 
-## Reading it
+## How to read the log
 
-The format is `jq`-friendly by construction. A few one-liners that answer
-real questions:
+The format is made for `jq`. These commands answer usual questions:
 
 ```sh
 # who has held "nightly/import", for how long, and why did each hold end?
@@ -50,8 +50,9 @@ jq 'select(.event == "released" and .reason == "expired")' audit.jsonl
 
 ## Rotation
 
-`SIGHUP` closes and reopens the audit file, so logrotate can move the old one
-aside; a no-op in stdout mode. A minimal logrotate policy:
+`SIGHUP` closes the audit file and opens it again. Thus logrotate can move
+the old file to a different name. In stdout mode, this operation does
+nothing. A minimal logrotate policy:
 
 ```text
 /var/log/monolock/audit.jsonl {
@@ -64,12 +65,12 @@ aside; a no-op in stdout mode. A minimal logrotate policy:
 }
 ```
 
-When the reopen fails the previous file is kept — losing audit mid-flight is
-worse than writing to a renamed file.
+If the reopen fails, the server keeps the previous file. A loss of audit
+data during operation is worse than writes to a renamed file.
 
 ## Stdout mode
 
-With `-audit-log -` the audit stream goes to stdout while the diagnostic log
-stays on stderr, so the two never interleave. In containers this maps cleanly
-onto the log pipeline: stdout is the structured audit feed for shipping,
-stderr is for humans and log levels.
+With `-audit-log -`, the audit stream goes to stdout, and the diagnostic log
+stays on stderr. Thus the two streams never mix. In containers, this agrees
+with the log pipeline. Stdout is the structured audit feed for delivery.
+Stderr is for the operator, and the log levels apply to it.

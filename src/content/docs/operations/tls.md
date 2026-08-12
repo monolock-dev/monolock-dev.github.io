@@ -3,12 +3,12 @@ title: TLS & mTLS
 description: Encrypting the protocol port, authenticating clients with certificates, and rotating everything on SIGHUP.
 ---
 
-`-tls-cert` and `-tls-key` (PEM) enable TLS on the protocol port; they are
-only valid together. `-tls-client-ca` adds a PEM CA pool for client
-certificates and enables **mTLS**: every client must present a certificate
-that verifies against the pool, and the connection is rejected at the
-handshake otherwise. A client CA without a server certificate and key is a
-configuration error.
+`-tls-cert` and `-tls-key` (PEM) enable TLS on the protocol port. The two
+flags are valid only together. `-tls-client-ca` adds a PEM CA pool for
+client certificates and enables **mTLS**. Each client must show a
+certificate. The server verifies the certificate against the pool. If the
+verification fails, the server rejects the connection at the handshake. A
+client CA without a server certificate and key is a configuration error.
 
 ```sh
 monolock \
@@ -17,8 +17,9 @@ monolock \
   -tls-client-ca /etc/monolock/clients-ca.crt
 ```
 
-The handshake is completed explicitly before any protocol traffic, bounded by
-`-io-timeout` like any other single read; failures are counted in
+The server completes the handshake explicitly before protocol traffic
+starts. The `-io-timeout` deadline limits the handshake, the same as each
+other single read. The server counts failures in
 `monolock_tls_handshake_errors_total`.
 
 ## The three modes
@@ -29,36 +30,38 @@ The handshake is completed explicitly before any protocol traffic, bounded by
 | `-tls-cert` + `-tls-key` | encrypted | empty |
 | … + `-tls-client-ca` | encrypted, both sides authenticated | derived from the client certificate |
 
-mTLS is the only source of client identity — there is deliberately no token
-or password authentication. If you need [ACL authorization](/operations/acl/)
-or identities in the [audit log](/operations/audit/), you need mTLS.
+mTLS is the only source of client identity. By design, there is no token
+authentication and no password authentication. If you need
+[ACL authorization](/operations/acl/) or identities in the
+[audit log](/operations/audit/), then you need mTLS.
 
 ## Client identity
 
-The identity is derived from the verified client certificate:
+The server derives the identity from the verified client certificate. The
+server uses the first item that is available:
 
-1. the first **URI SAN** (SPIFFE-friendly), else
-2. the first **DNS SAN**, else
+1. the first **URI SAN** (compatible with SPIFFE); if this is not present,
+2. the first **DNS SAN**; if this is not present,
 3. the **Common Name**.
 
-Every consumer sees the same string: [ACL rules](/operations/acl/) match
-against it, the [audit log](/operations/audit/) records it, and the
-[admin API](/operations/admin-api/) shows it per holder and waiter. Without
-mTLS the identity is empty.
+Each consumer sees the same string. [ACL rules](/operations/acl/) match
+against the string. The [audit log](/operations/audit/) records the string.
+The [admin API](/operations/admin-api/) shows the string for each holder
+and each waiter. Without mTLS, the identity is empty.
 
-With a SPIFFE-style PKI a certificate carrying
-`URI:spiffe://prod/worker/7` yields exactly that string as the identity, which
-is what an ACL rule like `spiffe://prod/worker/*` then matches.
+An example with a SPIFFE-style PKI: a certificate that contains
+`URI:spiffe://prod/worker/7` gives exactly this string as the identity. An
+ACL rule such as `spiffe://prod/worker/*` then matches this identity.
 
 ## Certificate reload
 
-`SIGHUP` re-reads all three files, so certificates rotate without a restart
-and **without dropping existing connections**; the new files apply to every
-connection accepted after the signal. A file that fails to load keeps its
-previous value, so a botched rotation degrades to stale certificates instead
-of a broken listener.
+`SIGHUP` reads the three files again. Thus certificates rotate without a
+restart and **without a loss of the open connections**. The new files apply
+to each connection that the server accepts after the signal. A file that
+does not load keeps its previous value. Thus an unsatisfactory rotation
+causes stale certificates, not a broken listener.
 
-A typical rotation is just:
+A typical rotation is only:
 
 ```sh
 cp new-server.crt /etc/monolock/server.crt
@@ -66,8 +69,9 @@ cp new-server.key /etc/monolock/server.key
 kill -HUP "$(pidof monolock)"
 ```
 
-Long-lived lock connections are a feature here: a session established under
-the old certificate keeps running — rotation never causes a lock handover.
+Long lock connections are an advantage here. A session that started under
+the old certificate continues to operate. A rotation never causes a lock
+handover.
 
 ## A lab PKI in four commands
 
@@ -91,7 +95,7 @@ openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -copy_extensions copy -out client.crt -days 90
 ```
 
-Then run the server with `-tls-cert server.crt -tls-key server.key
--tls-client-ca ca.crt`, and connect with a client configured for
-`client.crt` / `client.key` and `ca.crt` as the server CA. The client's
-identity everywhere in monolock is `spiffe://lab/worker/1`.
+Then start the server with `-tls-cert server.crt -tls-key server.key
+-tls-client-ca ca.crt`. Connect with a client that uses `client.crt` /
+`client.key`, and that uses `ca.crt` as the server CA. The identity of the
+client everywhere in monolock is `spiffe://lab/worker/1`.

@@ -3,11 +3,12 @@ title: ACL authorization
 description: Mapping mTLS identities to the lock names they may acquire, with glob rules and deny-by-default semantics.
 ---
 
-`-acl-file` points at a JSON file mapping client identities to the lock names
-they may acquire. It requires `-tls-client-ca`: the identity comes from the
-verified [mTLS certificate](/operations/tls/#client-identity), and without
-mTLS there is nothing to authorize. Without an ACL file authorization is
-disabled and every client may acquire every lock.
+`-acl-file` points to a JSON file. The file maps client identities to the
+lock names that they can acquire. The flag requires `-tls-client-ca`. The
+identity comes from the verified
+[mTLS certificate](/operations/tls/#client-identity). Without mTLS, there is
+no identity to authorize. Without an ACL file, authorization is off, and each
+client can acquire each lock.
 
 ```json
 {
@@ -20,59 +21,62 @@ disabled and every client may acquire every lock.
 
 ## Semantics
 
-**Deny by default, union of matches**: a lock is allowed if *any* `locks`
-pattern of *any* rule whose `identity` pattern matches the client allows it.
-Rule order carries no meaning — there are no priorities, no overrides, and no
-deny rules, which keeps every ACL file's meaning obvious from a glance.
+**Deny by default, union of matches**: a rule is applicable if its `identity`
+pattern matches the client. The server permits a lock if a `locks` pattern of
+one applicable rule matches the lock name. The sequence of the rules has no
+meaning. There are no priorities, no overrides, and no deny rules. Thus the
+meaning of each ACL file is immediately clear.
 
-"Allow everything" is an explicit `"*"`, not an absent rule. A rule must name
-an identity pattern and at least one locks pattern, since a rule that can
-never allow anything is a config mistake worth failing on.
+"Allow everything" is an explicit `"*"`, not an absent rule. A rule must have
+an identity pattern and a minimum of one locks pattern. A rule that can never
+permit a lock is a configuration error, and the server must reject it.
 
 With the file above:
 
 | Client identity | Lock | Result |
 | --------------- | ---- | ------ |
-| `spiffe://prod/worker/7` | `nightly/import` | allowed — first rule |
+| `spiffe://prod/worker/7` | `nightly/import` | allowed — the first rule matches |
 | `spiffe://prod/worker/7` | `shard-3` | allowed — `?` matches one character |
-| `spiffe://prod/worker/7` | `shard-31` | **denied** — `?` matches exactly one |
+| `spiffe://prod/worker/7` | `shard-31` | **denied** — `?` matches exactly one character |
 | `admin.svc.cluster.local` | anything | allowed — explicit `*` |
-| `spiffe://staging/worker/1` | `nightly/import` | **denied** — no matching identity |
+| `spiffe://staging/worker/1` | `nightly/import` | **denied** — no identity pattern matches |
 
 ## Glob language
 
-Both sides of a rule are glob patterns:
+The two sides of a rule are glob patterns:
 
 - `*` matches any substring, **including `/`**
 - `?` matches exactly one character
-- everything else is a literal
+- each other character is a literal
 
-A pattern matches the whole string, not a part of it, and strings are raw
-UTF-8 — case sensitive, never normalised. The same glob language is used by
-the admin API's `?match=` [filter](/operations/admin-api/), so patterns you
-write in rules behave identically when querying.
+A pattern matches the full string, not a part of it. Strings are raw UTF-8.
+They are case sensitive, and the server does not normalize them. The
+`?match=` [filter](/operations/admin-api/) of the admin API uses the same
+glob language. Thus a pattern from a rule gives the same result in a query.
 
-Note that `*` crossing `/` is deliberate: lock names are flat strings, and
-`/` is just a popular character in them, not a hierarchy the server knows
-about. `nightly/*` matches `nightly/import` and `nightly/a/b` alike.
+The behavior of `*` across `/` is intentional. Lock names are flat strings.
+The `/` character is only a frequent character in lock names, not a hierarchy
+that the server knows. `nightly/*` matches `nightly/import` and also
+`nightly/a/b`.
 
 ## Reload
 
-`SIGHUP` re-reads the file. When the reload fails — unreadable file, invalid
-JSON, a bad rule — the previous rules are kept and the error is logged. See
-the [SIGHUP contract](/operations/configuration/#sighup-reload-external-files).
+`SIGHUP` reads the file again. A reload can fail because of an unreadable
+file, invalid JSON, or a bad rule. Then the server keeps the previous rules
+and writes the error to the log. See the
+[SIGHUP contract](/operations/configuration/#sighup-reload-external-files).
 
 ## Denials
 
-A refused `ACQUIRE` is answered with `ERROR` code `0x18`
-(["not authorized for lock"](/reference/errors/)) and the connection is
-closed. That is a *client* error code: the same bytes will fail the same way,
-so a well-behaved client surfaces it and stops rather than retrying.
+The server answers a refused `ACQUIRE` with `ERROR` code `0x18`
+(["not authorized for lock"](/reference/errors/)) and closes the connection.
+This is a *client* error code: the same bytes fail in the same way again.
+Thus a correct client shows the error and stops, and does not retry.
 
-Denials are visible in three places:
+Denials are visible in three locations:
 
-- counted in `monolock_acl_denials_total`
+- the `monolock_acl_denials_total` counter
   ([metrics](/operations/observability/#metrics))
-- logged at info level
-- recorded in the [audit log](/operations/audit/) as `denied` events, with
-  the identity and the lock name
+- a log line at info level
+- a `denied` event in the [audit log](/operations/audit/), with the identity
+  and the lock name

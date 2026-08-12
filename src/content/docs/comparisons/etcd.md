@@ -3,194 +3,218 @@ title: "monolock vs etcd"
 description: etcd distributed lock vs monolock — Raft consensus, lease TTLs, clientv3 concurrency Mutex, revisions as fencing tokens, and when a single-server lock service is enough.
 ---
 
-etcd is a Raft-replicated key-value store: its locks keep working as long as a
-majority of the cluster is alive, which is exactly the guarantee monolock does
-not offer. monolock is one process, and while it is down no new locks can be
-acquired. If the work you are guarding cannot tolerate a coordination gap when
-the coordinator fails, pick etcd. If it can — cron singletons, deploy mutexes,
-leader election with a tolerable pause — monolock does the same job with one
-static binary, millisecond-scale failure detection, and none of the cluster
-operations.
+etcd is a key-value store with Raft replication. Its locks continue to
+operate while a majority of the cluster is alive. This is exactly the
+guarantee that monolock does not give. monolock is one process. While it is
+not available, new acquisitions are not possible. If your work cannot accept
+a coordination gap after a coordinator failure, select etcd. If a gap is
+acceptable — cron singletons, deploy mutexes, leader election with a
+permitted pause — monolock does the same work with one static binary,
+failure detection in milliseconds, and no cluster operations.
 
 ## Background
 
-The lineage of etcd's locking runs straight back to Google's Chubby, the 2006
-lock service built on Paxos that introduced most of the vocabulary this site
-uses — coarse-grained locks, sessions, and leases. ZooKeeper brought that
-design to the open-source world, and etcd, started at CoreOS in 2013, is the
-generation after that: its own documentation says plainly that "the lessons
-learned from ZooKeeper certainly informed etcd's design". Its first production
-job was coordinating Container Linux reboots — locksmith, a distributed
-semaphore over etcd, made sure only a few machines in a fleet updated at once.
+The locking of etcd comes from Chubby, the lock service that Google made on
+Paxos in 2006. Chubby gave us most of the vocabulary that this site uses:
+coarse-grained locks, sessions, and leases. ZooKeeper brought that design to
+the open-source world. etcd, started at CoreOS in 2013, is the subsequent
+generation. Its own documentation says that "the lessons learned from
+ZooKeeper certainly informed etcd's design". Its first production task was
+the coordination of Container Linux reboots. The tool locksmith, a
+distributed semaphore on etcd, made sure that only some machines in a fleet
+update at the same time.
 
-Then Kubernetes chose etcd as its datastore, and etcd became one of the most
-widely deployed consensus systems in existence. Every Kubernetes cluster runs
-one. That matters for this comparison: for many teams the honest question is
-not "should I deploy etcd for locks?" but "I already run etcd — should my
-locks live there too?"
+Then Kubernetes selected etcd as its datastore. Thus etcd became one of the
+most widely deployed consensus systems. Each Kubernetes cluster operates
+one. This is important for this comparison. For many teams, the honest
+question is not "must I deploy etcd for locks?". The question is "I already
+operate etcd — must my locks live there also?".
 
-Unlike ZooKeeper, which leaves locks to client-side recipes (Curator), etcd
-ships coordination as first-party API: leases, elections, and a distributed
-lock service maintained by the etcd developers themselves. That is what this
-article compares against — the recommended usage, not a home-grown
-compare-and-swap loop over bare keys.
+ZooKeeper gives locks only as client-side recipes (Curator). etcd is
+different. It has coordination as a first-party API: leases, elections, and
+a distributed lock service from the etcd developers themselves. This
+article compares against that recommended usage, not against a home-made
+compare-and-swap loop on bare keys.
 
-One well-known chapter of the story is Jepsen's 2020 analysis of etcd 3.4.3.
-The key-value store itself came out looking excellent — strict serializability
-held up under faults. The lock API did not: Jepsen showed that "multiple
-clients may hold the same etcd lock simultaneously", even "in healthy
-clusters, without any external faults" when lease TTLs were short. This is not
-an etcd bug; it is the inherent window of every lease-based lock, the same one
-[monolock documents](/concepts/fencing-tokens/). The fix is the same too:
-Jepsen pointed users at the lock key's revision as "a globally ordered fencing
-token", and etcd's documentation was revised accordingly. The lesson to carry
-into the rest of this article: *even the consensus-backed option* needs the
-guarded resource to enforce fencing.
+One well-known part of the story is the Jepsen analysis of etcd 3.4.3 in
+2020. The key-value store itself got a very good result. Strict
+serializability stayed correct under faults. The lock API did not. Jepsen
+showed that "multiple clients may hold the same etcd lock simultaneously",
+also "in healthy clusters, without any external faults", when the lease TTLs
+were short. This is not an etcd bug. It is the window that each lease-based
+lock has, the same window that
+[monolock documents](/concepts/fencing-tokens/). The solution is also the
+same. Jepsen pointed the users at the revision of the lock key as "a
+globally ordered fencing token", and the etcd documentation got a related
+update. The lesson for the remainder of this article: *also the option with
+consensus* needs a guarded resource that examines fencing tokens.
 
-## How etcd implements locking
+## How etcd makes a lock
 
-The recommended Go path is the `clientv3/concurrency` package. A **Session**
-wraps an etcd lease: `NewSession` calls `LeaseGrant` (default TTL 60 seconds;
-TTLs are whole seconds, requested by the client but ultimately decided by the
-server) and starts a background `LeaseKeepAlive` stream that refreshes the
-lease for the lifetime of the client. When the lease expires or is revoked,
-every key attached to it is deleted — that is the ephemerality primitive
-everything else is built on.
+**Session and lease.** The recommended Go path is the `clientv3/concurrency`
+package. A **Session** contains an etcd lease. `NewSession` calls
+`LeaseGrant` (the default TTL is 60 seconds). TTLs are whole seconds. The
+client requests a TTL, but the server makes the decision. The session also
+starts a background `LeaseKeepAlive` stream. This stream refreshes the lease
+for the life of the client. When the lease expires, or when a client revokes
+it, the server deletes each key that is attached to the lease. This is the
+base primitive for all the other functions.
 
-A **Mutex** is a key. `Mutex.Lock` writes a key under the lock's prefix,
-attached to the session's lease, and the key's `create_revision` — a position
-in etcd's globally ordered history of writes — becomes the claim's place in
-line. The oldest live key under the prefix owns the lock; every other session
-waits for the deletion of the keys created before its own. This is the
-ZooKeeper-style wait chain, and it is genuinely fair: waiters are woken in
-creation order, one at a time, with no thundering herd. The gRPC lock service
-(`Lock`/`Unlock` RPCs) exposes the same construction to non-Go clients, and
-its documentation makes the same promise: the next waiting caller is woken and
-given ownership.
+**Mutex.** A **Mutex** is a key. `Mutex.Lock` writes a key under the prefix
+of the lock, attached to the lease of the session. The `create_revision` of
+the key is a position in the globally ordered history of writes in etcd. It
+is the position of the claim in the line. The oldest live key under the
+prefix owns the lock. Each other session waits for the deletion of the keys
+that came before its own key. This is the ZooKeeper-style wait chain, and it
+is fair. The server wakes the waiters in the sequence of creation, one at a
+time. There is no group of waiters that awake at the same time. The gRPC
+lock service (the `Lock` and `Unlock` RPCs) gives the same construction to
+non-Go clients. Its documentation makes the same promise: the server wakes
+the subsequent waiting caller and gives it ownership.
 
-Dead-holder detection is lease expiry. A holder that crashes stops feeding its
-keep-alive stream; after the TTL the lease dies, the key vanishes, and the
-next waiter's watch fires. Detection latency is therefore up to the TTL —
-and since TTLs are whole seconds with a server-enforced minimum, it is
-seconds-scale in practice. A graceful `Unlock` deletes the key immediately.
+**Detection of a dead holder.** The detection is the lease expiry. A holder
+that has a crash stops its keep-alive stream. After the TTL, the lease dies,
+the key goes away, and the watch of the subsequent waiter reacts. Thus the
+detection latency is a maximum of the TTL. And because TTLs are whole
+seconds with a server-side minimum, the latency is seconds in practice. A
+controlled `Unlock` deletes the key immediately.
 
-Fencing exists, but it is raw material, not a delivered feature. Inside etcd
-itself, `Mutex.IsOwner()` gives you a transaction guard so that writes *to
-etcd* happen only while the lock is held. For any resource outside etcd — a
-database, an object store, an API — the user must extract the lock key's
-revision and plumb it through every guarded write as a fencing token. The
-Jepsen analysis exists precisely because many users assumed `Lock`/`Unlock`
-alone was mutual exclusion. It is not, and cannot be: a holder paused at the
-wrong moment can act after its lease has expired, in etcd exactly as in
-monolock.
+**Fencing.** Fencing is available, but as material, not as a complete
+function. In etcd itself, `Mutex.IsOwner()` gives you a transaction guard.
+With it, writes *to etcd* occur only while you hold the lock. For each
+resource outside etcd — a database, an object store, an API — you must get
+the revision from the lock key yourself. You must then send it with each
+guarded write as a fencing token. The Jepsen analysis exists exactly because
+many users thought that `Lock` and `Unlock` alone give mutual exclusion.
+They do not, and they cannot. A holder with a pause at the incorrect moment
+can operate after its lease expired — in etcd exactly as in monolock.
 
-What the Raft layer underneath buys is availability and durability. Every
-acquisition is a quorum write: proposed by the leader, fsynced to the
-write-ahead log on a majority of members, then committed. A 3-node cluster
-tolerates one dead member, a 5-node cluster two; leader failure costs an
-election, after which locking resumes. Revisions live in the replicated log,
-so fencing tokens are durable and monotonic across any restart, with no
-caveats.
+**What the Raft layer gives.** The Raft layer gives availability and
+durability. Each acquisition is a quorum write. The leader makes a proposal,
+a majority of the members fsync it to the write-ahead log, and then the
+cluster commits it. A 3-node cluster continues with one dead member, a
+5-node cluster with two. A leader failure costs an election. After the
+election, locking continues. The revisions live in the replicated log. Thus
+the fencing tokens are durable, and they increase across each restart,
+without conditions.
 
-The bill for that arrives as operations. You run 3 or 5 members on disks fast
-enough that fsync latency does not destabilize consensus — etcd's own FAQ is
-blunt that it is highly sensitive to disk performance and recommends SSDs. The
-MVCC store keeps every historical revision, so you configure history
-compaction; compaction fragments the backend, so you schedule per-member
-defragmentation, which blocks that member's reads and writes while it runs;
-and a backend quota watches over all of it — exceed it and the cluster raises
-an alarm and drops into a maintenance mode that accepts only reads and deletes
-until an operator compacts, defragments, and disarms the alarm.
+**The cost is operations.** You operate 3 or 5 members on disks that are
+sufficiently fast, because slow fsync makes the consensus unstable. The etcd
+FAQ says clearly that etcd is highly sensitive to disk performance, and it
+recommends SSDs. The MVCC store keeps each historical revision. Thus you
+must configure history compaction. Compaction fragments the backend. Thus
+you must schedule defragmentation for each member, and defragmentation
+blocks the reads and writes of that member while it runs. A backend quota
+monitors all of this. If you go above the quota, the cluster raises an
+alarm and goes into a maintenance mode. This mode accepts only reads and
+deletes, until an operator compacts, defragments, and stops the alarm.
 
-## How monolock differs
+## How monolock is different
 
-**One process instead of a quorum.** An acquisition is one round-trip to one
-server that mutates memory — no proposal, no replication, no fsync. The flip
-side is the availability row of the table below, lost on purpose: when the
-monolock server is down or restarting, nobody acquires anything until it is
-back ([what monolock is not](/start/introduction/#what-monolock-is-not)).
+**One process, not a quorum.** An acquisition is one round-trip to one
+server that changes its memory. There is no proposal, no replication, and
+no fsync. The cost is the availability row in the table below, and this
+loss is a design decision. When the monolock server is down or restarts,
+no client can acquire a lock until the server is available again
+([what monolock is not](/start/introduction/#what-monolock-is-not)).
 
-**The connection is the claim.** There is no lease object, session ID, or
-unlock call — one TCP connection makes one claim, and closing the connection
-is the release ([how it works](/concepts/how-it-works/)). etcd's Session is a
-thing you create, keep alive, and close; orphan it and the lock outlives your
-process until the TTL burns down.
+**The connection is the claim.** There is no lease object, no session ID,
+and no unlock call. One TCP connection makes one claim. The close of the
+connection is the release ([how it works](/concepts/how-it-works/)). An
+etcd Session is an object that you create, keep alive, and close. If you
+lose it without a close, the lock stays after your process until the TTL
+ends.
 
-**Leases are client-chosen and fine-grained.** etcd's server grants TTLs in
-whole seconds; monolock's client picks any duration per connection —
-milliseconds on a LAN — because the lease is only a failure detector, not a
-term of ownership. The heartbeat schedule is derived from it (`lease / 4`,
-shrunk by smoothed RTT), and the client unilaterally gives up at `0.8 ×
-lease`, *before* the server's deadline, so the stale side of the race is
-always the holder, never the server. etcd's client learns of lease loss
-through the keep-alive stream; the pessimism is comparable, but the detection
-floor is seconds, not milliseconds.
+**The client selects a fine-grained lease.** The etcd server grants TTLs in
+whole seconds. The monolock client selects any duration for its connection
+— milliseconds on a LAN. This is possible because the lease is only a
+failure detector, not a term of ownership. The heartbeat schedule comes
+from the lease (`lease / 4`, decreased by the smoothed RTT). The client
+stops its claim at `0.8 × lease`, *before* the deadline of the server. Thus
+the stale side of the race is always the holder, never the server. The etcd
+client learns about a lost lease through the keep-alive stream. The caution
+is comparable, but the minimum detection time is seconds, not milliseconds.
 
-**Handover is a push, not a watch.** Both systems queue waiters fairly — etcd
-by `create_revision` wait chain, monolock by strict FIFO arrival order. On
-handover, etcd deletes a key and the successor's watch fires; monolock's
-server sends `ACQUIRED` to the promoted waiter on its own initiative, one
-one-way trip after the owner's socket closes.
+**The handover is a push, not a watch.** The two systems have fair queues.
+etcd uses the wait chain with `create_revision`. monolock uses strict FIFO
+in the sequence of arrival. At handover, etcd deletes a key, and the watch
+of the subsequent waiter reacts. The monolock server sends the `ACQUIRED`
+message to the promoted waiter on its own initiative — one one-way message
+after the socket of the owner closes.
 
-**Fencing is explicit, with honest bounds.** monolock delivers a `uint64`
-token in every grant; etcd makes you fish the `create_revision` out of the
-lock key. In *both* systems the guarded resource must enforce the comparison —
-neither lock service can do it for you. The real difference is durability:
-etcd revisions live in the Raft log and survive anything short of losing the
-cluster; monolock's tokens keep their guarantee across restarts only under
-[documented conditions](/concepts/fencing-tokens/#the-guarantees-bounds). If
-your resource cannot accept those bounds, that alone decides for etcd.
+**Fencing is explicit, with honest limits.** monolock sends a `uint64`
+token in each grant. In etcd, you must get the `create_revision` from the
+lock key yourself. In the *two* systems, the guarded resource must do the
+comparison. No lock service can do it for you. The real difference is
+durability. The etcd revisions live in the Raft log. They stay correct
+after each failure that is smaller than the loss of the cluster. The
+monolock tokens keep their guarantee across restarts only under
+[documented conditions](/concepts/fencing-tokens/#the-guarantees-bounds):
+the clock of the server must not go back between two restarts, and there
+must be a minimum of one second between the restarts. In usual operation,
+these conditions are almost always true. A failure needs an unusual event:
+a wall clock that moves back exactly around a restart, for example because
+of an incorrect NTP configuration. The probability is near zero. And if
+this event occurs, it is a problem for your full system — certificates,
+logs, caches, and databases — not only for the lock. But if your resource
+must have tokens with no conditions at all, this point makes etcd the
+correct selection.
 
-**Footprint.** monolock is a single static Go binary, standard library only,
-holding everything in memory. There is no WAL to place on an SSD, no history
-to compact, no backend to defragment, no quota alarm to disarm.
+**Footprint.** monolock is one static Go binary, standard library only,
+with all data in memory. There is no WAL that needs an SSD, no history that
+needs compaction, no backend that needs defragmentation, and no quota alarm
+that needs an operator.
 
 ## Side by side
 
 | | monolock | etcd |
 | --- | --- | --- |
-| Ownership model | one TCP connection = one claim | key under a lease; oldest `create_revision` owns |
-| Dead-holder detection | silence for a client-chosen lease | lease TTL expiry; whole seconds, server-granted |
-| Queue / fairness | strict FIFO | fair wait chain ordered by `create_revision` |
-| Fencing tokens | on every grant, monotonically increasing | key revision usable as token; extraction and plumbing are yours |
-| Handover latency | push; immediate on graceful exit, ≤ lease on crash | watch fires on key delete; immediate on unlock, ≤ TTL on crash |
-| Clock assumptions | monotonic durations only, no synchronized clocks | no synchronized client clocks; TTLs counted server-side |
-| Survives coordinator failure | no — single point of coordination | yes — any minority of members can fail |
-| Operational footprint | single static Go binary, stdlib only | 3/5-node cluster, fsynced WAL, compaction + defrag + quota |
-| Extra infra needed | one small server | a consensus cluster on low-latency disks |
+| Ownership model | one TCP connection = one claim | a key under a lease; the oldest `create_revision` owns |
+| Detection of a dead holder | silence for a client-selected lease | lease TTL expiry; whole seconds, granted by the server |
+| Queue / fairness | strict FIFO | fair wait chain in the sequence of `create_revision` |
+| Fencing tokens | with each grant, the number always increases | the key revision can be a token; you get it and send it yourself |
+| Handover latency | push; immediate after a controlled stop, ≤ one lease after a crash | the watch reacts to the key deletion; immediate after unlock, ≤ TTL after a crash |
+| Clock assumptions | monotonic durations only, no synchronized clocks | no synchronized client clocks; the server counts the TTLs |
+| Operation continues after a coordinator failure | no — single point of coordination | yes — a minority of the members can fail |
+| Operational footprint | one static Go binary, stdlib only | a 3/5-node cluster, fsynced WAL, compaction + defragmentation + quota |
+| New infrastructure | one small server | a consensus cluster on low-latency disks |
 
-## When to choose etcd
+## When etcd is the correct selection
 
-- The guarded work must keep acquiring locks through the failure of a
-  coordinator node. This is the headline feature and monolock simply does not
-  have it.
-- You already operate etcd — every Kubernetes control plane does — and can
-  reuse it instead of adding a service. (Mind the blast radius: lock traffic
-  shares the cluster, its quota, and its compaction schedule with everything
-  else.)
-- Fencing tokens must be durable with no caveats: revisions are committed to
-  the Raft log and survive restarts unconditionally.
-- You need more than locks from the same system — replicated configuration,
-  watches, elections, service discovery — and want them behind one
+- The guarded work must continue to acquire locks through the failure of a
+  coordinator node. This is the primary feature, and monolock does not have
+  it.
+- You already operate etcd — each Kubernetes control plane does — and you
+  can use it without a new service. But be careful: the lock traffic shares
+  the cluster, its quota, and its compaction schedule with all the other
+  data.
+- The fencing tokens must be durable without conditions, also in rare
+  failure modes. The revisions are committed to the Raft log and stay
+  correct after each restart.
+- You need more than locks from the same system — replicated
+  configuration, watches, elections, service discovery — behind one
   consistent, transactional API.
-- Multi-node durability of the coordination state is a compliance or
-  architectural requirement in itself.
+- Multi-node durability of the coordination state is itself a compliance or
+  architecture requirement.
 
-## When to choose monolock
+## When monolock is the correct selection
 
-- The workload tolerates a brief coordination gap if the server restarts:
-  nightly imports, cron-style singletons, deploy mutexes, leader election for
-  interruptible work. This is monolock's stated target, not a stretch.
-- You want dead holders detected in milliseconds, not seconds — monolock's
-  client-chosen leases go as low as the network allows; etcd's TTLs are whole
-  seconds with a server minimum.
-- You do not want to run a consensus cluster for a lock: no quorum sizing, no
-  SSD latency budget, no compaction, defragmentation, or quota alarms — one
-  binary and a port.
-- You want ownership that cannot outlive the process: no session to orphan, no
-  unlock to forget — the kernel closing the socket is the release.
-- You want handover pushed to the next waiter the instant the owner leaves,
-  with strict FIFO order and a fencing token already in the grant.
+- The work accepts a short coordination gap when the server restarts:
+  nightly imports, cron-style singletons, deploy mutexes, and leader
+  election for work that you can interrupt. This is the specified target of
+  monolock.
+- You want the detection of dead holders in milliseconds, not seconds. The
+  client-selected leases of monolock go as low as the network permits. The
+  etcd TTLs are whole seconds with a server-side minimum.
+- You do not want to operate a consensus cluster for a lock: no quorum
+  size, no SSD latency budget, no compaction, no defragmentation, and no
+  quota alarms — one binary and one port.
+- You want ownership that cannot stay after the process: no session that
+  you can lose, and no unlock that you can forget. The close of the socket
+  by the kernel is the release.
+- You want a handover that goes to the subsequent waiter immediately when
+  the owner leaves, with strict FIFO sequence and a fencing token already
+  in the grant.
 
 ## Sources
 

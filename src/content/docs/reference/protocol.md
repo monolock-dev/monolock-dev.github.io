@@ -3,16 +3,18 @@ title: Wire protocol
 description: The complete byte-level reference for monolock protocol version 1.
 ---
 
-monolock speaks a binary protocol over raw TCP, version 1. One connection is
-one claim on one named lock: the connection *is* the lease, closing it
-releases the lock. All multi-byte integers are **big endian**. TCP is a byte
-stream, so fixed-size fields are read fully (`io.ReadFull` in Go terms) —
-never assume one read returns one message.
+monolock uses a binary protocol, version 1, over raw TCP. One connection is
+one claim on one named lock. The connection *is* the lease. When the
+connection closes, the server releases the lock. All multi-byte integers are
+**big endian**. TCP is a byte stream. Thus a client must read fixed-size
+fields fully (`io.ReadFull` in Go). Do not assume that one read returns one
+message.
 
-The wire format lives in
-[`pkg/protocol`](https://github.com/monolock-dev/monolock/tree/main/pkg/protocol)
-and is the one package the server module exports; clients in any language
-implement the same bytes — see [Writing a client](/clients/writing-a-client/).
+The wire format is in
+[`pkg/protocol`](https://github.com/monolock-dev/monolock/tree/main/pkg/protocol).
+This is the one package that the server module exports. Clients in each
+language implement the same bytes — see
+[Writing a client](/clients/writing-a-client/).
 
 ## Messages
 
@@ -23,7 +25,7 @@ ACQUIRE    [0x01][version uint8][lease_ms uint32][name_len uint16][name bytes]
 HEARTBEAT  [0x02]
 ```
 
-The `ACQUIRE` frame laid out byte by byte:
+This is the `ACQUIRE` frame, byte by byte:
 
 ```mermaid
 packet-beta
@@ -34,27 +36,28 @@ packet-beta
 64-95: "name (name_len bytes, raw UTF-8)"
 ```
 
-`ACQUIRE` must be the first message on a connection, and must appear exactly
-once — a second `ACQUIRE` is answered with error `0x12`.
+`ACQUIRE` must be the first message on a connection. It must occur exactly
+one time. The server answers a second `ACQUIRE` with error `0x12`.
 
-**`lease_ms`** is the lease the client chooses for this connection: the
-server drops the session once it stays quiet for that long. It must be
-positive (`0` is answered with error `0x17`) and stays constant for the life
-of the connection. There is no upper bound — how long a lock is *held* is
-unlimited anyway, the lease only decides how quickly a dead holder is
-detected. Pick the smallest value that survives the network pauses between
-you and the server: milliseconds on the same machine, seconds across a flaky
-WAN.
+**`lease_ms`** is the lease that the client selects for this connection. The
+server drops the session when the session is silent for this duration. The
+value must be positive; the server answers `0` with error `0x17`. The value
+stays constant for the life of the connection. There is no upper limit. The
+hold time of a lock is unlimited in all cases. The lease only sets the
+detection speed for a dead holder. Select the smallest value that is safe
+against the network pauses between the client and the server: milliseconds
+on the same machine, seconds across an unreliable WAN.
 
-**Lock names** are raw UTF-8 — case sensitive, never normalised, never
-trimmed — and limited to **255 bytes**. That limit is part of the protocol
-rather than a server setting, so a name any client can build is a name every
-server accepts. The length field is wider than the limit, so a longer name is
-expressible on the wire and answered with error `0x15`. An empty name is
-error `0x14`; invalid UTF-8 is error `0x16`.
+**Lock names** are raw UTF-8. They are case sensitive. The server does not
+normalize them and does not trim them. The limit is **255 bytes**. This
+limit is a part of the protocol, not a server setting. Thus each server
+accepts each name that a client can build. The length field is wider than
+the limit. Thus a longer name is possible on the wire, and the server
+answers it with error `0x15`. An empty name causes error `0x14`. Invalid
+UTF-8 causes error `0x16`.
 
-**`HEARTBEAT`** is a single byte. See [Heartbeats](#heartbeats) for the
-required client cadence.
+**`HEARTBEAT`** is one byte. See [Heartbeats](#heartbeats) for the necessary
+heartbeat schedule of the client.
 
 ### Server to client
 
@@ -65,21 +68,23 @@ ERROR      [0x13][code uint8][reason_len uint8][reason bytes]
 ```
 
 **`token`** is the [fencing token](/concepts/fencing-tokens/) of the grant.
-Every `ACQUIRED` a session receives — the first grant, a promotion, a
-heartbeat acknowledgement — carries the same token the session was granted.
+Each `ACQUIRED` message that a session receives contains the token of its
+grant. The first grant, a promotion, and a heartbeat acknowledgement all
+contain the same token.
 
-`WAITING` and `ACQUIRED` double as the heartbeat acknowledgement — there is
-no separate `PING`, `PONG` or `ACK`. A reply means the heartbeat arrived, the
-session is still registered, the return path works, and it reports the
-client's current state. When a waiter is promoted the server sends `ACQUIRED`
-**on its own initiative**, without waiting for the next heartbeat, so clients
-need a permanent reader on the connection.
+`WAITING` and `ACQUIRED` are also the heartbeat acknowledgement. There is no
+separate `PING`, `PONG`, or `ACK` message. A reply gives four facts: the
+heartbeat arrived, the session is registered, the return path operates, and
+the client has the reported state. When the server promotes a waiter, the
+server sends `ACQUIRED` **on its own initiative**. It does not wait for the
+subsequent heartbeat. Thus a client needs a permanent reader on the
+connection.
 
-For `ERROR`, the **code** is the contract and the **reason** is a
-human-readable UTF-8 string for error messages and debugging: the canonical
-text of the code, sometimes followed by detail — "unknown message type:
-0x7f" — and possibly empty. Clients branch on the code alone, never on the
-text. The full code table with retry semantics is on
+For `ERROR`, the **code** is the contract. The **reason** is a
+human-readable UTF-8 string for error messages and debugging. It contains
+the canonical text of the code, sometimes with more detail — "unknown
+message type: 0x7f" — and it can be empty. Clients branch on the code only,
+never on the text. The full code table with the retry rules is on
 [Error codes](/reference/errors/).
 
 ## Session state machine
@@ -96,19 +101,21 @@ stateDiagram-v2
     DISCONNECTED --> [*]
 ```
 
-A connection moves through `CONNECTED → WAITING → ACQUIRED → DISCONNECTED` or
-`CONNECTED → ACQUIRED → DISCONNECTED`. `ACQUIRED` never falls back to
-`WAITING`. There is no `RELEASE` command: close the connection and the next
-waiter is promoted at once, with no need to wait out the lease.
+A connection moves through `CONNECTED → WAITING → ACQUIRED → DISCONNECTED`
+or `CONNECTED → ACQUIRED → DISCONNECTED`. `ACQUIRED` never goes back to
+`WAITING`. There is no `RELEASE` command. Close the connection, and the
+server immediately promotes the next waiter. It is not necessary to wait for
+the end of the lease.
 
 ## Heartbeats
 
-The server stores `lastSeenAt` per session, refreshed by any valid `ACQUIRE`
-or `HEARTBEAT`, and drops the session once the lease it asked for passes.
-Only durations cross the wire, never timestamps, so clocks need no
-synchronisation and only monotonic time is used on either side.
+The server stores `lastSeenAt` for each session. Each valid `ACQUIRE` or
+`HEARTBEAT` refreshes this value. The server drops the session when the time
+after `lastSeenAt` becomes more than the lease that the session requested.
+Only durations go across the wire, never timestamps. Thus clock
+synchronization is not necessary, and the two sides use only monotonic time.
 
-The client derives everything else from the lease it chose:
+The client calculates all other values from the lease that it selected:
 
 ```text
 baseInterval  = lease / 4
@@ -117,22 +124,23 @@ safeRTT       = smoothedRTT * 2  // EWMA, alpha = 0.2
 interval      = clamp(baseInterval - safeRTT, minHeartbeatInterval, baseInterval)
 ```
 
-RTT can only shrink the interval; a fast link never pushes it above
-`baseInterval`. If `safeRTT` already covers the whole base interval, the next
-heartbeat goes out as soon as the previous one is answered.
+RTT can only decrease the interval. A fast link never increases it above
+`baseInterval`. If `safeRTT` is equal to or more than the full base
+interval, the client sends the subsequent heartbeat immediately after the
+answer to the previous one.
 
-At most one heartbeat is ever in flight, so heartbeats cannot pile up in a
-TCP buffer, a stale message cannot extend a session, and no sequence IDs are
-needed. The interval is measured between sends, not as a pause after the
-reply.
+A maximum of one heartbeat is in flight at one time. Thus heartbeats cannot
+collect in a TCP buffer, a stale message cannot extend a session, and
+sequence IDs are not necessary. The client measures the interval between
+sends, not as a pause after the reply.
 
-The reasoning behind these rules is unpacked in
-[How it works](/concepts/how-it-works/#heartbeats); the rules themselves are
-normative for any client implementation.
+[How it works](/concepts/how-it-works/#heartbeats) explains the reasons for
+these rules. The rules are normative for each client implementation.
 
 ## Versioning
 
-The protocol version rides in every `ACQUIRE` (currently `1`). A server that
-does not support the requested version answers with error `0x10`. There is no
-negotiation — a client speaks one version, and the error is the signal to
-fall back if it can.
+Each `ACQUIRE` contains the protocol version (currently `1`). A server that
+does not support the requested version answers with error `0x10`. There is
+no negotiation. A client speaks one version. The error is the signal for the
+client to change to a version that the server supports, if the client has
+one.

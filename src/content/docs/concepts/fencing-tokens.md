@@ -3,30 +3,32 @@ title: Fencing tokens
 description: Why liveness is not safety, and how fencing tokens let the guarded resource reject stale holders.
 ---
 
-Losing a connection and handing the lock over gives *liveness* — the lock
-never sits behind a dead holder for longer than the lease — but not *safety*.
-A holder paused by a GC cycle, a laptop lid, or a network hiccup may wake up
-and write to the guarded resource **after** its lease expired and the lock
-moved on. For a window bounded by nothing the server controls, two processes
-both believe they hold the lock.
+When a connection is lost, the server moves the lock. This gives *liveness*:
+the lock never stays behind a dead holder for more than the lease. But this
+does not give *safety*. A GC cycle, a closed laptop lid, or a network problem
+can pause a holder. The holder can then continue and write to the guarded
+resource **after** its lease expired and the lock moved. For a window of
+time, two processes both think that they hold the lock. No limit that the
+server controls bounds this window.
 
-The server cannot close that window. It manages the lock, not the resource,
-and it cannot recall a write that is already in flight. No lock service can —
-this is a property of distributed mutual exclusion, not a monolock
-limitation. What a lock service *can* do is give the resource the information
-it needs to protect itself.
+The server cannot close this window. The server manages the lock, not the
+resource, and it cannot recall a write that is already in flight. No lock
+service can do this. This is a property of distributed mutual exclusion, not
+a monolock limitation. What a lock service *can* do is give the resource the
+information that the resource needs to protect itself.
 
 ## The token
 
-Every grant of any lock gets a **fencing token**: a `uint64` strictly larger
-than the token of every earlier grant, delivered in `ACQUIRED`. Every
-`ACQUIRED` a session receives — the first grant, a promotion, a heartbeat
-acknowledgement — carries the same token the session was granted.
+Each grant of each lock gets a **fencing token**: a `uint64` that is strictly
+larger than the token of each earlier grant. The token comes in `ACQUIRED`.
+Each `ACQUIRED` that a session receives — the first grant, a promotion, a
+heartbeat acknowledgement — contains the same token that the session got at
+its grant.
 
-Pass the token along with every operation against the guarded resource — a
-conditional write, a CAS, an `if token >= stored_token` check — and have the
-resource reject anything carrying a smaller number than the largest it has
-seen.
+Send the token with each operation on the guarded resource — a conditional
+write, a CAS, an `if token >= stored_token` check. The resource must reject
+each operation that carries a smaller number than the largest number that the
+resource has seen.
 
 ```mermaid
 sequenceDiagram
@@ -46,37 +48,41 @@ sequenceDiagram
     R--xA: REJECTED — 41 < 42
 ```
 
-The stale holder fences *itself* out: whatever it sends is stamped with an
-older token than the current owner's. The resource needs one comparison and
-one remembered number — no clocks, no lock-service round-trip.
+The stale holder fences *itself* out: each message that it sends carries an
+older token than the token of the current owner. The resource needs only one
+comparison and one stored number — no clocks, and no round-trip to the lock
+service.
 
 ## Using it in practice
 
-The check belongs wherever the write lands:
+Put the check at the location where the write occurs:
 
-- **SQL**: store the token next to the guarded row(s) and make every write
+- **SQL**: store the token adjacent to the guarded row(s) and make each write
   conditional — `UPDATE … SET …, token = $t WHERE token <= $t`.
 - **Object storage**: put the token in the object metadata and use
-  compare-and-swap / preconditions (ETag-style) keyed on it.
-- **Your own service**: keep `max_seen_token` per guarded entity, reject
-  requests carrying less.
+  compare-and-swap / preconditions (ETag-style) with the token as the key.
+- **Your own service**: keep `max_seen_token` for each guarded entity, and
+  reject requests that carry a smaller token.
 
-Tokens are strictly increasing across *all* locks, not per lock — they are
-issued from one global counter. Comparing tokens is therefore meaningful for
-one guarded resource, and one resource should be guarded by one lock.
+Tokens strictly increase across *all* locks, not for each lock. One global
+counter issues them. Thus a comparison of tokens is meaningful for one
+guarded resource, and the correct design is one lock for one guarded
+resource.
 
-The [Go client](/clients/go/) hands the token to your work function as an
-argument; a raw-protocol client reads it from every `ACQUIRED` frame (see the
-[wire protocol](/reference/protocol/)).
+The [Go client](/clients/go/) gives the token to your work function as an
+argument. A raw-protocol client reads the token from each `ACQUIRED` frame
+(see the [wire protocol](/reference/protocol/)).
 
 ## The guarantee's bounds
 
-The token is built from the server's start time and a global grant counter,
-with nothing persisted to disk. That makes the guarantee's bounds explicit:
-tokens keep growing across a server restart **as long as** the server's clock
-does not step backwards and restarts happen at most once per second.
+The server makes the token from its start time and a global grant counter.
+Nothing is persisted to disk. Thus the bounds of the guarantee are explicit:
+tokens continue to increase across a server restart **only if** the clock of
+the server does not go back between the restarts, and if there is a minimum
+of one second between the restarts.
 
-For a single-node server with no consensus and no disk this is a deliberate
-trade-off, stated rather than hidden. If the resource demands stronger
-guarantees than that, it needs a consensus-backed lock service instead —
-see [what monolock is not](/start/introduction/#what-monolock-is-not).
+For a single-node server with no consensus and no disk, this is a deliberate
+trade-off. This page states the trade-off and does not hide it. If the
+resource demands stronger guarantees than this, a consensus-backed lock
+service is necessary instead — see
+[what monolock is not](/start/introduction/#what-monolock-is-not).

@@ -13,11 +13,12 @@ import { Tabs, TabItem, Steps, Aside } from '@astrojs/starlight/components';
    docker run -p 7070:7070 ghcr.io/monolock-dev/monolock
    ```
 
-   That is a complete production-shaped server: no config file, no database,
-   no dependencies. Every knob is a flag with a matching environment
-   variable — see [Configuration](/operations/configuration/).
+   This is a complete server in its production shape: no config file, no
+   database, no dependencies. Each setting is a flag, and each flag has an
+   equivalent environment variable. See
+   [Configuration](/operations/configuration/).
 
-2. **Take a lock from your code.**
+2. **Acquire a lock from your code.**
 
    <Tabs syncKey="lang">
      <TabItem label="Go">
@@ -54,41 +55,41 @@ import { Tabs, TabItem, Steps, Aside } from '@astrojs/starlight/components';
      <TabItem label="Python">
        <Aside type="note" title="Coming soon">
          An official Python client does not exist yet. The
-         [wire protocol](/reference/protocol/) is small and stable — see
-         [Writing a client](/clients/writing-a-client/) if you want to roll
-         your own today.
+         [wire protocol](/reference/protocol/) is small and stable. See
+         [Writing a client](/clients/writing-a-client/) if you want to write
+         your own client today.
        </Aside>
      </TabItem>
      <TabItem label="Node.js">
        <Aside type="note" title="Coming soon">
          An official Node.js client does not exist yet. The
-         [wire protocol](/reference/protocol/) is small and stable — see
-         [Writing a client](/clients/writing-a-client/) if you want to roll
-         your own today.
+         [wire protocol](/reference/protocol/) is small and stable. See
+         [Writing a client](/clients/writing-a-client/) if you want to write
+         your own client today.
        </Aside>
      </TabItem>
      <TabItem label="Rust">
        <Aside type="note" title="Coming soon">
          An official Rust client does not exist yet. The
-         [wire protocol](/reference/protocol/) is small and stable — see
-         [Writing a client](/clients/writing-a-client/) if you want to roll
-         your own today.
+         [wire protocol](/reference/protocol/) is small and stable. See
+         [Writing a client](/clients/writing-a-client/) if you want to write
+         your own client today.
        </Aside>
      </TabItem>
    </Tabs>
 
-3. **Watch the handover.**
+3. **See the handover.**
 
-   Run the program twice at the same time. The second process queues up in
-   FIFO order and prints nothing — until you stop the first one, at which
-   point the second is promoted *immediately*, without waiting out any
-   timeout. Kill the first one with `kill -9` instead and the handover takes
-   at most the lease (2 seconds above): that is the failure-detection window
-   you chose in the call.
+   Run the program two times at the same time. The second process goes into
+   the FIFO queue and prints nothing. When you stop the first process, the
+   server promotes the second process *immediately*. There is no timeout to
+   wait for. If you stop the first process with `kill -9`, the handover takes
+   a maximum of the lease (2 seconds above). This is the failure-detection
+   window that you selected in the call.
 
 </Steps>
 
-## What just happened
+## What occurred
 
 ```mermaid
 sequenceDiagram
@@ -114,23 +115,25 @@ sequenceDiagram
     S-->>B: ACQUIRED token=42
 ```
 
-Each connection claims one named lock. The owner holds it for as long as its
-heartbeats keep arriving; the waiter heartbeats too, keeping its place in the
-queue. When the owner's connection closes — a graceful exit — the next waiter
-is promoted at once. When the owner dies silently, the server waits out the
-lease *that client chose* and then moves on.
+Each connection makes a claim on one named lock. The owner holds the lock
+while its heartbeats continue to arrive. The waiter also sends heartbeats,
+and thus it keeps its position in the queue. When the connection of the owner
+closes in a controlled stop, the server promotes the subsequent waiter
+immediately. When the owner stops silently, the server waits for the lease
+*that the client selected*. Then the server moves the lock.
 
-Note the tokens: `41`, then `42`. Every grant carries a fencing token strictly
-larger than every earlier one. Hand it to the resource your lock guards and a
-stale holder — one that lost the lock but doesn't know it yet — fences itself
-out. That is the difference between hoping mutual exclusion holds and having
-the resource enforce it: read [Fencing tokens](/concepts/fencing-tokens/).
+Examine the tokens: `41`, then `42`. Each grant contains a fencing token that
+is strictly larger than each earlier token. Give the token to the resource
+that your lock guards. The resource then rejects writes from a stale holder —
+a holder that lost the lock and does not know it yet. This is the difference
+between hope that mutual exclusion holds and enforcement by the resource.
+Read [Fencing tokens](/concepts/fencing-tokens/).
 
 ## Next steps
 
-- [How it works](/concepts/how-it-works/) — leases, heartbeats and handover in
-  depth.
-- [Deployment](/operations/deployment/) — Docker, systemd and Kubernetes
+- [How it works](/concepts/how-it-works/) — leases, heartbeats, and handover
+  in detail.
+- [Deployment](/operations/deployment/) — Docker, systemd, and Kubernetes
   manifests.
-- [TLS & mTLS](/operations/tls/) — encrypt and authenticate before leaving
-  localhost.
+- [TLS & mTLS](/operations/tls/) — encrypt and authenticate before the
+  traffic leaves localhost.

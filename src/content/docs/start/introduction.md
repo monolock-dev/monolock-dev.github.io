@@ -3,64 +3,71 @@ title: Introduction
 description: What monolock is, what problem it solves, and when to pick it over a consensus-backed lock service.
 ---
 
-monolock is a lightweight TCP server for named locks — a distributed mutex
-without the distributed system. Many processes across many machines need to
-agree that only one of them runs the nightly import, rolls the deploy, or
-compacts the shard. monolock gives them a single, simple place to agree.
+monolock is a small TCP server for named locks: a distributed mutex without
+the distributed system. Many processes on many machines must agree that only
+one of them runs the nightly import, starts the deploy, or compacts the
+shard. monolock gives them one simple location for this agreement.
 
 ## The idea
 
-A client opens a TCP connection, asks for a lock by name, and either becomes
-the owner or queues up behind the current one. That is the whole model:
+A client opens a TCP connection and asks for a lock by name. The client
+becomes the owner, or it goes into a queue behind the current owner. This is
+the full model:
 
-- **One connection is one claim on one lock.** The connection *is* the lease;
-  closing it releases the lock. There is no `RELEASE` command to forget and no
-  session token to lose.
-- **Named locks, FIFO waiters.** Lock names are raw UTF-8 strings up to 255
-  bytes. Waiters are promoted strictly in arrival order.
-- **Connection-scoped ownership.** On graceful shutdown of the owner the next
-  waiter takes over immediately. If the owner hangs or the network drops, the
-  lock moves on once the session stays silent for a full lease.
-- **Client-chosen leases, RTT-aware heartbeats.** Each client picks how fast a
-  dead holder should be detected; the server imposes no global policy.
-- **Fencing tokens.** Every grant carries a number strictly larger than every
-  earlier grant, so the guarded resource can reject writes from stale holders.
+- **One connection is one claim on one lock.** The connection *is* the lease.
+  When the connection closes, the server releases the lock. There is no
+  `RELEASE` command that you can forget. There is no session token that you
+  can lose.
+- **Named locks, FIFO waiters.** Lock names are raw UTF-8 strings with a
+  maximum length of 255 bytes. The server promotes the waiters strictly in
+  the sequence of their arrival.
+- **Connection-scoped ownership.** After a controlled stop of the owner, the
+  subsequent waiter gets the lock immediately. If the owner stops or the
+  network fails, the server moves the lock when the session is silent for a
+  full lease.
+- **Client-selected leases, RTT-aware heartbeats.** Each client selects the
+  detection speed for a dead holder. The server has no global policy.
+- **Fencing tokens.** Each grant contains a number that is strictly larger
+  than the number of each earlier grant. Thus the guarded resource can reject
+  writes from stale holders.
 
-## What's in the box
+## What is included
 
-The server is a single static Go binary with no dependencies outside the
-standard library — no database, no config file, no sidecar. Operations are
-covered end to end:
+The server is one static Go binary. It has no dependencies outside the
+standard library: no database, no config file, no sidecar. The necessary
+operations functions are all included:
 
 - [TLS and mTLS](/operations/tls/) with certificate rotation on `SIGHUP`
 - [ACL authorization](/operations/acl/): mTLS identity → lock name glob rules
-- [JSON audit log](/operations/audit/) of every ownership change
+- [JSON audit log](/operations/audit/) of each ownership change
 - [Admin HTTP API](/operations/admin-api/): introspection, force-release,
-  kicking waiters
+  removal of waiters (kick)
 - [Prometheus metrics and health endpoints](/operations/observability/)
-- Connections and waiters limited only by
-  [system resources](/concepts/capacity/)
+- Only [system resources](/concepts/capacity/) limit the number of
+  connections and waiters
 
 ## What monolock is not
 
 monolock is **simple by design**: a single point of coordination. There is no
-replication, no quorum, no consensus. That buys a tiny operational footprint
-and easy-to-reason-about behavior, and it costs availability: when the server
-is down or restarting, locks cannot be acquired until it is back.
+replication, no quorum, and no consensus. The advantages are a very small
+operational footprint and behavior that is easy to analyze. The cost is
+availability. When the server is down or restarts, new acquisitions are not
+possible until the server is available again.
 
-That trade-off is right for a lot of real work — cron-style jobs, deploy
-mutexes, leader election for tasks that tolerate a brief coordination gap. It
-is wrong when the guarded resource demands guarantees that survive the
-coordinator: then you need a consensus-backed lock service (etcd, ZooKeeper,
-Consul) and should not try to bend monolock into one.
+This trade-off is correct for much real work: cron jobs, deploy mutexes, and
+leader election for tasks that permit a short coordination gap. The trade-off
+is not correct when the guarded resource needs guarantees that continue after
+a coordinator failure. Then you need a consensus-backed lock service (etcd,
+ZooKeeper, Consul). Do not try to change monolock into one.
 
-[Fencing tokens](/concepts/fencing-tokens/) narrow the gap considerably — they
-protect the *resource* even when a holder goes stale — but their guarantee has
-explicit bounds, documented honestly rather than hand-waved.
+[Fencing tokens](/concepts/fencing-tokens/) make this gap much smaller. They
+protect the *resource* also when a holder becomes stale. But their guarantee
+has explicit limits. The documentation gives these limits honestly and does
+not hide them.
 
 ## Where to go next
 
 - [Quick start](/start/quickstart/) — a server and a lock in two minutes.
-- [How it works](/concepts/how-it-works/) — sessions, leases, heartbeats and
+- [How it works](/concepts/how-it-works/) — sessions, leases, heartbeats, and
   handover in detail.
 - [Wire protocol](/reference/protocol/) — the full byte-level reference.

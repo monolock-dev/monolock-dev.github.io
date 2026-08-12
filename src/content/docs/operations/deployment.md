@@ -3,10 +3,10 @@ title: Deployment
 description: Running monolock under Docker, systemd and Kubernetes — one instance, done properly.
 ---
 
-monolock is a single process with no state on disk, so deploying it is mostly
-about three things: file descriptors ([capacity](/concepts/capacity/)),
-signal delivery (`SIGHUP` reloads, graceful shutdown), and keeping exactly
-one instance reachable at a stable address.
+monolock is a single process without state on disk. Thus a deployment has
+three primary parts: file descriptors ([capacity](/concepts/capacity/)),
+signal delivery (`SIGHUP` reloads and a controlled stop), and exactly one
+instance that clients can reach at a stable address.
 
 ```mermaid
 flowchart LR
@@ -24,13 +24,15 @@ flowchart LR
     M -->|stdout / file| A[(audit log)]
 ```
 
-**One instance is the model, not a limitation to engineer around.** monolock
-is a single point of coordination by design — do not run two instances behind
-one load balancer, because locks live in one server's memory and two servers
-are two independent lock spaces. Run one, restart it fast, and let clients
-reconnect: on shutdown they are told to ([error `0x01`](/reference/errors/)),
-and a restart loses only queue positions, while the guarded resources stay
-protected by [fencing tokens](/concepts/fencing-tokens/).
+**One instance is the design, not a limitation that you must remove.**
+monolock is a single point of coordination by design. Do not operate two
+instances behind one load balancer. Locks are in the memory of one server,
+and two servers are two independent lock spaces. Operate one instance,
+restart it quickly, and let the clients connect again. At shutdown, the
+server tells the clients to connect again ([error `0x01`](/reference/errors/)).
+A restart loses only the queue positions. The
+[fencing tokens](/concepts/fencing-tokens/) continue to protect the guarded
+resources.
 
 ## Docker
 
@@ -47,11 +49,11 @@ docker run -d --name monolock \
 ```
 
 `--ulimit nofile=` is the connection capacity. `MONOLOCK_AUDIT_LOG=-` sends
-the audit stream to stdout for the container log pipeline, while diagnostics
-stay on stderr — the [two-log model](/operations/observability/#logging)
-keeps them separable.
+the audit stream to stdout for the container log pipeline. The diagnostics
+stay on stderr. The [two-log model](/operations/observability/#logging)
+keeps the two streams separable.
 
-Reload certificates or the ACL file with:
+To read the certificates or the ACL file again, use:
 
 ```sh
 docker kill --signal=HUP monolock
@@ -88,16 +90,16 @@ ReadWritePaths=/var/log/monolock
 WantedBy=multi-user.target
 ```
 
-`systemctl reload monolock` maps to `SIGHUP` — certificate rotation, ACL
-reload and audit reopen. `LimitNOFILE=` sets the capacity. The hardening
-options are safe because the server needs nothing from the filesystem beyond
-its config files (read) and the audit log (write).
+`systemctl reload monolock` sends `SIGHUP`. This does the certificate
+rotation, the ACL reload, and the audit reopen. `LimitNOFILE=` sets the
+capacity. The hardening options are safe. The server needs only its
+configuration files (read) and the audit log (write) from the filesystem.
 
 ## Kubernetes
 
-One replica, `Recreate` strategy — two pods during a rolling update would be
-two independent lock spaces, so trade a few seconds of coordination gap for
-correctness:
+Use one replica and the `Recreate` strategy. Two pods during a rolling
+update are two independent lock spaces. Thus accept a coordination gap of
+some seconds and get correct operation:
 
 ```yaml
 apiVersion: apps/v1
@@ -141,25 +143,28 @@ spec:
     - { name: protocol, port: 7070 }
 ```
 
-Clients connect to `monolock:7070`. The probes hit the
-[ops server](/operations/observability/), which keeps answering through the
-shutdown window, so the endpoint is pulled out of the Service before
-connections are cut. The admin API stays on `127.0.0.1` — reach it with
+Clients connect to `monolock:7070`. The probes go to the
+[ops server](/operations/observability/). This server continues to answer
+during the shutdown window. Thus Kubernetes removes the endpoint from the
+Service before the server closes the connections. The admin API stays on
+`127.0.0.1`. Get access to it with
 `kubectl port-forward deploy/monolock 7071:7071`.
 
-For TLS, mount the certificate Secret and point the `MONOLOCK_TLS_*`
-variables at it; on rotation send the reload signal instead of restarting:
+For TLS, mount the certificate Secret and set the `MONOLOCK_TLS_*`
+variables to its path. For a rotation, send the reload signal and do not
+restart:
 
 ```sh
 kubectl exec deploy/monolock -- kill -HUP 1
 ```
 
-## Choosing leases around restarts
+## Lease selection and restarts
 
-A server restart drops all sessions; clients that classify errors correctly
-reconnect immediately (shutdown is a [server-condition
-code](/reference/errors/)) and re-queue. The visible cost of a restart is
-therefore roughly your image pull + process start, and it is worth measuring:
-clients whose lease is far below that window will report acquisition failures
-during the restart rather than riding it out, which is correct behavior —
-just be sure their [retry policy](/clients/go/#errors) expects it.
+A server restart stops all sessions. Clients that classify errors correctly
+connect again immediately (shutdown is a [server-condition
+code](/reference/errors/)) and go into the queue again. Thus the visible
+cost of a restart is approximately the image pull plus the process start.
+Measure this time. Clients that have a lease much shorter than this window
+will report acquisition failures during the restart. They will not wait
+through the restart. This behavior is correct. But make sure that their
+[retry policy](/clients/go/#errors) is prepared for these failures.

@@ -5,16 +5,16 @@
 				<div class="eyebrow-sm idx">01</div>
 				<h3>Fencing tokens built in</h3>
 				<p>
-					Every grant carries a monotonically growing token. Pass it to the resource the lock guards
-					and stale holders fence themselves out — safety on top of liveness.
+					Every grant carries a monotonically growing token. Pass it to the resource the lock guards,
+					and the resource rejects writes from stale holders — safety on top of liveness.
 				</p>
 				<a href="/concepts/fencing-tokens/">Fencing tokens →</a>
 			</div>
 			<div class="cell">
 				<div class="eyebrow-sm idx">02</div>
-				<h3>Client-chosen leases</h3>
+				<h3>Client-selected leases</h3>
 				<p>
-					Each client picks its own failure-detection window per connection. Heartbeats are
+					Each client selects its own failure-detection window per connection. Heartbeats are
 					RTT-aware, and a dead holder is detected within one lease — while a healthy one can hold
 					forever.
 				</p>

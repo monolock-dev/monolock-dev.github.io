@@ -3,11 +3,11 @@ title: Writing a client
 description: What a correct monolock client in any language must do — a checklist with pseudocode.
 ---
 
-Official clients exist for [Go](/clients/go/); Python, Node.js and Rust are
-planned. Until then — or for any other language — the
-[wire protocol](/reference/protocol/) is deliberately small: a correct client
-is a few hundred lines, and this page is the specification-as-checklist for
-writing one.
+An official client is available for [Go](/clients/go/). Python, Node.js, and
+Rust clients are planned. Until then, or for a different language, you can
+write your own client. The [wire protocol](/reference/protocol/) is
+intentionally small. A correct client is a few hundred lines. This page is
+the specification-as-checklist to write one.
 
 ## The shape of a client
 
@@ -23,75 +23,82 @@ on any doubt:                         # timeout, EOF, garbage bytes
     close the connection and treat the lock as lost
 ```
 
-The four messages are laid out byte-for-byte in the
-[protocol reference](/reference/protocol/#messages); the rules below are what
-turns "can speak the bytes" into "is safe to build on".
+The [protocol reference](/reference/protocol/#messages) shows the four
+messages byte-for-byte. The rules below change "can speak the bytes" into
+"is safe to build on".
 
 ## The rules
 
 ### 1. Keep a permanent reader
 
-Promotion is a **push**: when you are the next waiter, the server sends
-`ACQUIRED` on its own initiative, not as a reply to anything. A client that
-only reads after sending will sit on an already-granted lock without knowing
-it. Run a read loop for the whole life of the connection.
+Promotion is a **push**. When you are the next waiter, the server sends
+`ACQUIRED` on its own initiative, not as a reply to a message. A client that
+reads only after it sends does not see the grant. The lock is then granted,
+and the client does not know it. Run a read loop for the full life of the
+connection.
 
 ### 2. Read frames, not packets
 
-TCP is a byte stream. Read exactly the frame the length fields describe
-(`read_full` semantics), and never assume one `read()` call returns one
-message — or that a message arrives in one piece.
+TCP is a byte stream. Read exactly the frame that the length fields describe
+(`read_full` semantics). Do not assume that one `read()` call returns one
+message. Do not assume that a message arrives in one piece.
 
 ### 3. Derive the heartbeat schedule from the lease
 
 The [heartbeat rules](/reference/protocol/#heartbeats) are normative:
 
-- base interval `lease / 4`;
-- shrink by twice the smoothed RTT (EWMA, alpha 0.2), never below a floor
-  (the Go client uses 100ms), never above the base interval;
-- **at most one heartbeat in flight** — send the next only after the reply;
-- give up at `0.8 × lease` without a confirmation, so you always give up
-  before the server drops you.
+- the base interval is `lease / 4`;
+- decrease the interval by two times the smoothed RTT (EWMA, alpha 0.2); do
+  not go below a floor (the Go client uses 100ms); do not go above the base
+  interval;
+- **a maximum of one heartbeat in flight** — send the subsequent heartbeat
+  only after the reply;
+- stop your claim at `0.8 × lease` without a confirmation. Thus you always
+  stop before the server removes you.
 
-The last point is the safety-critical one: the client must be the pessimist.
-If your client can believe it holds a lock the server has already moved on
-from, it is wrong even if it passes every happy-path test.
+The last point is the safety-critical one. The client must be the pessimist.
+Possibly your client can think that it holds a lock that the server has
+already released. Then your client is incorrect, also if it passes each
+happy-path test.
 
 ### 4. Treat any reply as the acknowledgement
 
-`WAITING` and `ACQUIRED` double as heartbeat acks — there is no `PONG`. Any
-frame from the server means the session is alive and tells you your current
-state. There are no sequence numbers to match because rule 3 guarantees only
-one heartbeat is ever unanswered.
+`WAITING` and `ACQUIRED` are also the heartbeat acks. There is no `PONG`.
+Each frame from the server shows that the session is alive and tells you
+your current state. There are no sequence numbers to match, because rule 3
+guarantees that a maximum of one heartbeat is unanswered.
 
 ### 5. Surface the fencing token
 
-Deliver the token from `ACQUIRED` to the code that does the guarded work, and
-make it easy to pass along — it is the resource's only defense against a
-stale holder ([why](/concepts/fencing-tokens/)). A client API that hides the
-token invites unsafe usage.
+Deliver the token from `ACQUIRED` to the code that does the guarded work.
+Make the transfer of the token easy. The token is the only defense of the
+resource against a stale holder ([why](/concepts/fencing-tokens/)). A client
+API that hides the token makes unsafe usage more probable.
 
 ### 6. Classify errors by code range
 
-Per the [retry contract](/reference/errors/#the-retry-contract): codes below
-`0x10` are server conditions — reconnect (immediately after `0x01`, with
-backoff otherwise); codes from `0x10` up are client errors — surface and
-stop. Classify by *range*, not by enumerating known codes, so future codes
-are handled correctly. Branch on the code, never on the reason text.
+Obey the [retry contract](/reference/errors/#the-retry-contract). Codes
+below `0x10` are server conditions: connect again (immediately after `0x01`,
+with backoff in the other cases). Codes from `0x10` and above are client
+errors: show the error and stop. Classify by *range*, not by a list of known
+codes. Then your client processes future codes correctly. Branch on the
+code, never on the reason text.
 
 ### 7. Release by closing, and only by closing
 
-There is no `RELEASE` message. Close the connection when the work is done —
-or when anything is in doubt: a timeout, an unexpected byte, a failed write.
-Close-on-doubt is always safe (the server promotes the next waiter; your
-lock is simply gone), while carrying on in an uncertain state never is.
+There is no `RELEASE` message. Close the connection when the work is
+complete. Also close the connection when there is a doubt: a timeout, an
+unexpected byte, a failed write. Close-on-doubt is always safe. The server
+promotes the next waiter, and the only result for you is the loss of the
+lock. Continuation in an uncertain state is never safe.
 
 ### 8. Losing the lock must stop the work
 
-When the session ends — heartbeat timeout, EOF, `ERROR` — whatever the lock
-guarded must be told to stop (cancel a context, set a flag, kill a task).
-Re-acquiring is a new `ACQUIRE` on a new connection, at the back of the FIFO
-queue; there is no silent re-acquisition.
+The session can stop because of a heartbeat timeout, an EOF, or an `ERROR`.
+Then the work that the lock guarded must get a stop signal (cancel a
+context, set a flag, kill a task). A new acquisition is a new `ACQUIRE` on a
+new connection, at the back of the FIFO queue. There is no silent
+re-acquisition.
 
 ## Testing against a real server
 
@@ -101,15 +108,21 @@ A local server is one command:
 docker run -p 7070:7070 ghcr.io/monolock-dev/monolock
 ```
 
-Scenarios worth scripting, in rough order of how often they catch bugs:
+Script these scenarios. The sequence is approximately the frequency with
+which they find bugs:
 
-1. two clients, one lock: the second gets `WAITING`, then `ACQUIRED` when the
-   first disconnects — *without* sending anything (tests rule 1);
-2. hold a lock past several heartbeat intervals (tests rule 3's cadence);
-3. drop the network mid-hold (a firewall rule, a proxy you kill): the client
-   must give up before the lease and stop the work (tests rules 3 and 8);
-4. server restart mid-queue: expect `ERROR 0x01`, reconnect immediately
-   (tests rule 6);
-5. send a 300-byte name: expect `ERROR 0x15` and no retry (tests rule 6).
+1. two clients, one lock: the second client gets `WAITING`, then `ACQUIRED`
+   when the first client disconnects — *without* a sent message (this tests
+   rule 1);
+2. hold a lock for more than several heartbeat intervals (this tests the
+   schedule of rule 3);
+3. stop the network while the client holds the lock (a firewall rule, a
+   proxy that you kill): the client must stop its claim before the lease and
+   stop the work (this tests rules 3 and 8);
+4. a server restart while the client is in the queue: expect `ERROR 0x01`,
+   and connect again immediately (this tests rule 6);
+5. send a 300-byte name: expect `ERROR 0x15` and no retry (this tests
+   rule 6).
 
-If you write a client, tell us — the plan is to list community clients here.
+If you write a client, tell us. The plan is to show a list of community
+clients on this page.

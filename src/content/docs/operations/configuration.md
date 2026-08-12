@@ -3,9 +3,10 @@ title: Configuration
 description: Every flag, its environment variable, and the SIGHUP reload contract.
 ---
 
-There is no config file. Every knob is a flag, and every flag has a matching
-environment variable; a **flag wins over the environment, which wins over the
-default**. `monolock -h` prints the same table as below.
+There is no configuration file. Each setting is a flag, and each flag has a
+related environment variable. A **flag wins over the environment variable,
+and the environment variable wins over the default**. `monolock -h` prints
+the same table as below.
 
 ## Flags
 
@@ -23,33 +24,39 @@ default**. `monolock -h` prints the same table as below.
 | `-log-level` | `MONOLOCK_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `-log-format` | `MONOLOCK_LOG_FORMAT` | `text` | `text` or `json` |
 
-Durations are Go duration strings, e.g. `5s` or `250ms`.
+Durations are Go duration strings, for example `5s` or `250ms`.
 
 ## What is deliberately absent
 
-There is **no lease knob and no heartbeat knob**: each client picks its own
-lease in `ACQUIRE`, and the client derives its heartbeat schedule from that
-(see [How it works](/concepts/how-it-works/#heartbeats)). The server's only
-I/O policy is `-io-timeout` — the deadline for a single read or write, which
-bounds how long one stuck socket can occupy the server.
+There is **no lease setting and no heartbeat setting**. Each client selects
+its own lease in `ACQUIRE`. The client calculates its heartbeat schedule
+from this lease (see [How it works](/concepts/how-it-works/#heartbeats)).
+The only I/O policy of the server is `-io-timeout`, the deadline for a
+single read or a single write. This deadline limits the time that one
+blocked socket can occupy the server.
 
-There is also no connection or queue limit — see
-[Capacity & limits](/concepts/capacity/) for what bounds the server instead.
+There is also no connection limit and no queue limit. See
+[Capacity & limits](/concepts/capacity/) for the resources that limit the
+server instead.
 
 ## SIGHUP: reload external files
 
-`SIGHUP` is the single "re-read your external files" signal. It re-reads:
+`SIGHUP` is the single signal that makes the server read its external files
+again. The server reads these files again:
 
-- the TLS certificate, key and client CA — so certificates
+- the TLS certificate, the key, and the client CA, so that certificates
   [rotate without a restart](/operations/tls/#certificate-reload)
 - the [ACL file](/operations/acl/#reload)
-- and reopens the [audit log](/operations/audit/#rotation) for logrotate
 
-A failed reload keeps the previous state: a botched certificate rotation
-degrades to stale certificates, a broken ACL file keeps the old rules, a
-failed audit reopen keeps writing to the old (possibly renamed) file. The
-failure is logged; the server never trades a running configuration for a
-broken one.
+The server also opens the [audit log](/operations/audit/#rotation) again,
+for logrotate.
+
+A failed reload keeps the previous state. An unsatisfactory certificate
+rotation causes stale certificates, not a stop. A broken ACL file keeps the
+old rules. If the audit log does not open again, the server continues to
+write to the old file, which possibly has a new name. The server writes the
+failure to the log. The server never replaces a satisfactory configuration
+with a broken configuration.
 
 ## Example
 
@@ -66,7 +73,8 @@ monolock \
   -log-format json
 ```
 
-The same configuration via environment (useful for containers):
+The same configuration through the environment variables (useful for
+containers):
 
 ```sh
 MONOLOCK_LISTEN_ADDRESS=0.0.0.0:7070 \

@@ -5,8 +5,9 @@ description: The official Go client — Do, DoRetry, configuration and error sem
 
 [monolock-go](https://github.com/monolock-dev/monolock-go) is the official Go
 client. One lock is one TCP connection. `Do` blocks until this process owns
-the named lock, runs your function for exactly as long as the server keeps
-confirming ownership, and releases the lock on the way out.
+the named lock. `Do` then runs your function for exactly the time in which
+the server confirms ownership. When the function returns, `Do` releases the
+lock.
 
 ## Install
 
@@ -47,77 +48,85 @@ err := c.Do(ctx, "nightly-import", 2*time.Second,
     })
 ```
 
-The function's context is cancelled on heartbeat confirmation timeout, EOF,
-connection error, server shutdown, or cancellation of `Do`'s own context.
-Once it is cancelled the work it guarded must stop; call `Do` again to queue
-up for a new turn — there is no silent re-acquisition, and a new turn means a
-new position at the back of the FIFO queue.
+The client cancels the function's context on a heartbeat confirmation
+timeout, an EOF, a connection error, a server shutdown, or a cancellation of
+`Do`'s own context. When the context is cancelled, the work that the lock
+guarded must stop. Call `Do` again to go into the queue for a new turn.
+There is no silent re-acquisition. A new turn is a new position at the back
+of the FIFO queue.
 
-Cancelling `Do`'s own context is a **graceful stop, not a loss**. While still
-queueing it aborts at once; once the function is running it only asks the
-function to stop — the lock stays held, heartbeats and all, until the
-function winds down and returns, so a routine shutdown never hands the lock
-over while the work is still finishing. The safety net for a holder that
-cannot wind down is the lease itself: kill the process and the lock moves on
-within it.
+A cancellation of `Do`'s own context is a **graceful stop, not a loss**. If
+the client still waits in the queue, `Do` stops immediately. If the function
+already runs, the cancellation only asks the function to stop. The client
+holds the lock and continues the heartbeats until the function stops and
+returns. Thus a usual shutdown does not give the lock to a different client
+while the work continues. The protection for a holder that cannot stop is
+the lease itself. Kill the process, and the lock goes to the next client in
+a maximum of one lease.
 
-`Do` makes exactly one attempt: a dial failure, a connection dropped while
-still queueing, or a server rejection comes back as an error, and
-[retrying is the caller's decision](#errors). What `Do` does block on is the
-queue itself — a healthy connection in the `WAITING` state waits as long as
-the context allows.
+`Do` makes exactly one attempt. A dial failure, a connection loss in the
+queue, or a server rejection returns as an error, and
+[a new attempt is the decision of the caller](#errors). But `Do` blocks on
+the queue itself. A satisfactory connection in the `WAITING` state waits for
+the full time that the context permits.
 
-The lock is released whenever the function returns — or panics — with no
-release call to forget. Closing the connection *is* the release as far as the
-server is concerned, so the next waiter is promoted at once instead of
-waiting out the lease.
+The client releases the lock each time the function returns — or panics.
+There is no release call that you can forget. For the server, the closure of
+the connection *is* the release. Thus the server immediately promotes the
+next waiter and does not wait for the end of the lease.
 
 ## Configuration
 
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `Address` | — | `host:port` of the server, required |
-| `Dialer` | `&net.Dialer{}` | anything with `DialContext`: a `*tls.Dialer` reaches a server running with [`-tls-cert`](/operations/tls/) (its client certificate is the client's [identity](/operations/tls/#client-identity) for the server's ACL and audit log), a `*net.Dialer` tunes dial timeouts, keep-alives or the source address |
+| `Dialer` | `&net.Dialer{}` | each type that has `DialContext`: a `*tls.Dialer` connects to a server that operates with [`-tls-cert`](/operations/tls/) (its client certificate is the client's [identity](/operations/tls/#client-identity) for the ACL and the audit log of the server); a `*net.Dialer` adjusts dial timeouts, keep-alives, or the source address |
 
-Everything else is derived from the lease passed to `Do`: heartbeats go out
-every `lease/4` minus a safety margin of twice the smoothed round trip, never
-more often than every 100ms, and silence longer than `lease * 0.8` — whether
-during the ACQUIRE handshake or while holding the lock — makes the client
-give up, always before the server would. See
+The client calculates all other values from the lease that you give to
+`Do`. The client sends a heartbeat each `lease/4`, minus a safety margin of
+two times the smoothed round trip. The client does not send heartbeats more
+frequently than each 100ms. Silence that is longer than `lease * 0.8` makes
+the client stop its claim. This rule is applicable in the ACQUIRE handshake
+and also while the client holds the lock. The client always stops before the
+server stops. See
 [the heartbeat rules](/reference/protocol/#heartbeats).
 
 ## Errors
 
-`Do` returns exactly what happened. Before the function ever runs: invalid
-input as the protocol's own validation errors (`protocol.ErrEmptyName`,
-`protocol.ErrNameTooLong`, `protocol.ErrInvalidLease`), a dial or connection
-error as is, and a server rejection as a `*ServerError` carrying the wire
-code and reason. A `ServerError` unwraps to the canonical protocol error, so
-`errors.Is(err, protocol.ErrShuttingDown)` works. `ServerError.Temporary`
-reports whether a new attempt may help — following
-[the code ranges](/reference/errors/#the-retry-contract): codes below `0x10`
-are server conditions (e.g. shutting down), codes from `0x10` up are client
-errors the same bytes would hit again.
+`Do` returns exactly the error that occurred. Errors are possible before
+the function runs. `Do` returns invalid input as the validation errors of
+the protocol (`protocol.ErrEmptyName`, `protocol.ErrNameTooLong`,
+`protocol.ErrInvalidLease`). `Do` returns a dial error or a connection error
+without a change. `Do` returns a server rejection as a `*ServerError` that
+contains the wire code and the reason. A `ServerError` unwraps to the
+canonical protocol error. Thus `errors.Is(err, protocol.ErrShuttingDown)`
+operates correctly. `ServerError.Temporary` tells you if a new attempt can
+help. It obeys [the code ranges](/reference/errors/#the-retry-contract).
+Codes below `0x10` are server conditions (for example, a shutdown). Codes
+from `0x10` and above are client errors, and the same bytes cause the same
+error again.
 
-`DoRetry` is `Do` with the retry loop built in: transient acquisition
-failures — a dropped dial or connection, a temporary rejection — are retried
-with exponential backoff and jitter, from 100ms doubling to 5s, until the
-context is cancelled, while invalid input and permanent rejections return at
-once. Every attempt is a fresh position at the back of the FIFO queue. Once
-the function has run, its outcome is returned with no second run: whether
-half-done work may be repeated is a property of the work, not of the lock.
+`DoRetry` is `Do` with an included retry loop. Transient acquisition
+failures are a lost dial, a lost connection, or a temporary rejection.
+`DoRetry` tries these again with exponential backoff and jitter, from 100ms
+with a doubling to 5s, until the context is cancelled. Invalid input and
+permanent rejections return immediately. Each attempt is a new position at
+the back of the FIFO queue. After the function has run, `DoRetry` returns
+its result and does not run the function a second time. The question of a
+repetition of incomplete work is a property of the work, not of the lock.
 
-Once the function runs, `Do` returns its error. If the lock was lost while
-the function was still running, the cause — `ErrHeartbeatTimeout`,
-`ErrConnectionClosed`, `ErrProtocolViolation`, or a `*ServerError` — is
-joined in even when the function returned nil, because its last actions may
-have run without the lock. A graceful stop through `Do`'s own context is not
-a loss and joins nothing.
+After the function runs, `Do` returns the error of the function. Possibly
+the client lost the lock while the function ran. Then `Do` joins the cause
+into the result: `ErrHeartbeatTimeout`, `ErrConnectionClosed`,
+`ErrProtocolViolation`, or a `*ServerError`. This occurs also when the
+function returned nil, because the last actions of the function possibly ran
+without the lock. A graceful stop through `Do`'s own context is not a loss
+and joins nothing.
 
 ## TLS
 
-Pass a `*tls.Dialer` to reach a [TLS-enabled server](/operations/tls/); with
-mTLS the client certificate doubles as the client's identity:
+Give a `*tls.Dialer` to connect to a [TLS-enabled server](/operations/tls/).
+With mTLS, the client certificate is also the identity of the client:
 
 ```go
 c := monolock.New(monolock.Config{

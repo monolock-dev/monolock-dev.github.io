@@ -3,9 +3,9 @@ title: Error codes
 description: Every ERROR code on the wire, and the retry contract the code ranges encode.
 ---
 
-An `ERROR` frame carries a one-byte code and a human-readable reason (see the
-[frame layout](/reference/protocol/#server-to-client)). Clients branch on the
-code alone, never on the text.
+An `ERROR` frame contains a one-byte code and a human-readable reason (see
+the [frame layout](/reference/protocol/#server-to-client)). Clients branch
+on the code only, never on the text.
 
 ## Codes
 
@@ -25,31 +25,31 @@ code alone, never on the text.
 
 ## The retry contract
 
-The split is a **range, not a list**:
+The division is a **range, not a list**:
 
-- **Codes below `0x10` are server conditions.** Nothing is wrong with the
-  client, and reconnecting is the right reaction — immediately after a
-  shutdown handover (`0x01`), with backoff otherwise.
-- **Codes from `0x10` up are client errors.** The same bytes will fail the
-  same way, so the client should surface the error and stop rather than
-  retry.
+- **Codes below `0x10` are server conditions.** There is no problem in the
+  client. The correct reaction is to connect again: immediately after a
+  shutdown handover (`0x01`), and with backoff for the other codes.
+- **Codes at `0x10` and above are client errors.** The same bytes will fail
+  in the same way. The correct reaction is to report the error and stop, not
+  to retry.
 
-Because the split is a range, a client classifies codes it does not know yet
-the same way — a future server condition below `0x10` gets retried, a future
-client error above it gets surfaced. That is what keeps old clients
-well-behaved against newer servers.
+The division is a range. Thus a client classifies unknown codes in the same
+way. A future server condition below `0x10` gets a retry. A future client
+error at `0x10` or above gets a report. This rule keeps old clients correct
+against newer servers.
 
 ## The reason string
 
-The reason is a UTF-8 string for error messages and debugging: the canonical
-text of the code, sometimes followed by detail — `unknown message type:
-0x7f` — and possibly empty. It is not part of the contract and may change
-between server versions; never parse it.
+The reason is a UTF-8 string for error messages and debugging. It contains
+the canonical text of the code, sometimes with more detail — `unknown
+message type: 0x7f` — and it can be empty. It is not a part of the contract,
+and it can change between server versions. Do not parse it.
 
 ## Observability
 
-Every sent `ERROR` is counted in `monolock_protocol_errors_total{code}`
-([metrics](/operations/observability/#metrics)), so a misbehaving client
-class shows up as a rising counter labelled with its wire code. ACL denials
-(`0x18`) additionally count in `monolock_acl_denials_total` and land in the
-[audit log](/operations/audit/) as `denied` events.
+The server counts each sent `ERROR` in `monolock_protocol_errors_total{code}`
+([metrics](/operations/observability/#metrics)). Thus a class of incorrect
+clients is visible as a counter that increases, with the wire code as a
+label. ACL denials (`0x18`) also count in `monolock_acl_denials_total`, and
+they appear in the [audit log](/operations/audit/) as `denied` events.

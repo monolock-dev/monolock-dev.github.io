@@ -1,22 +1,38 @@
 # Comparison article template
 
-This file is not published (underscore prefix — Astro content collections skip
-it). It is the authoring guide for every `comparisons/*.md` page. Follow the
-structure and tone exactly so the articles stay consistent and comparable.
+This file is not published (underscore prefix — Astro content collections
+skip it). It is the authoring guide for each `comparisons/*.md` page. Follow
+the structure and the language rules exactly, so that the articles stay
+consistent and comparable.
 
-## Tone & style
+## Language: Simplified Technical English
 
-- Calm, honest, zero marketing. Same voice as `/start/introduction/` and
-  `/concepts/how-it-works/`: technical, plain sentences, trade-offs stated
-  openly. monolock loses some rows on purpose — say so plainly.
-- **No straw men.** Describe the competitor at its best, the way its own
-  documentation recommends using it. If a common misuse exists, mention it as
-  a misuse, not as the baseline.
-- Facts about the competitor must come from primary sources (their docs,
-  papers, the authors' own posts) — verify with web search while writing, do
-  not rely on memory. Every claim that could be disputed gets a link in
-  Sources.
-- Link to existing monolock pages with root-relative paths:
+All articles use ASD-STE100 Simplified Technical English:
+
+- Sentences of 20–25 words maximum. One idea per sentence.
+- Active voice. Present tense where possible. No contractions.
+- No idioms, no metaphors, no colloquialisms. Prefer a simple verb over a
+  phrasal verb.
+- House vocabulary: "select" (not choose/pick), "occur" (not happen),
+  "subsequent" (not next-in-sequence), "examine" (not check/inspect),
+  "satisfactory", "necessary", "not possible" (not can't), "immediately",
+  "the correct selection".
+- Technical terms and proper nouns are exempt from the vocabulary rules
+  (for example "fencing token", "keep-alive", "transaction pooling").
+- Keep direct quotations from external documentation verbatim, in quotes.
+
+## Tone
+
+- Calm, honest, zero marketing. State the trade-offs openly. monolock loses
+  some rows on purpose — say so plainly.
+- **No straw men.** Describe the competitor at its best, in the way that its
+  own documentation recommends. If a common misuse exists, describe it as a
+  misuse, not as the baseline.
+- Facts about the competitor must come from primary sources: their
+  documentation, papers, or the posts of the authors. Verify with web search
+  while you write. Do not rely on memory. Each claim that a reader can
+  dispute gets a link in Sources.
+- Link to the monolock pages with root-relative paths:
   `/concepts/how-it-works/`, `/concepts/fencing-tokens/`,
   `/operations/deployment/`, etc. Do not restate their content at length.
 - Length target: 1200–1800 words. English only.
@@ -36,66 +52,78 @@ description: <one sentence with the search phrases a person comparing these
 
 ### (no heading) — TL;DR
 
-2–3 sentences right under the frontmatter: the core difference in model, and
-who should pick which. Written for the reader who reads nothing else.
+2–3 sentences directly under the frontmatter: the core difference in the
+model, and who must select which tool. Write it for the reader who reads
+nothing else.
 
 ### `## Background`
 
-The story. Where <X>'s locking comes from, what it was designed for, and any
-well-known debates or lessons attached to it (e.g. the Kleppmann–antirez
-Redlock debate, ZooKeeper's Chubby ancestry, "you already run Postgres").
-This is the section that gives the article character — 3–6 paragraphs,
-narrative, with sources.
+The story. Where the locking of <X> comes from, its design goal, and the
+known discussions or lessons attached to it (for example the
+Kleppmann–antirez Redlock discussion, the Chubby ancestry of ZooKeeper,
+"you already operate Postgres"). This section gives the article its
+character — 3–6 paragraphs, narrative, with sources.
 
-### `## How <X> implements locking`
+### `## How <X> makes a lock`
 
-Honest technical description of the competitor, best-practice usage:
+An honest technical description of the competitor, in its best-practice
+usage. Use bold lead-ins per paragraph, for example: **The key.**
+**Detection of a dead holder.** **The wait procedure.** **Fencing.** Cover:
 
-- ownership model (what *is* a lock: a key with TTL, a session, a row, an
-  ephemeral node…)
-- how a lease/TTL is extended and by whom
-- how a dead holder is detected, and how fast
-- whether waiters queue, and in what order
-- whether anything like a fencing token exists, and whether applying it is
-  automatic or the user's job
+- the ownership model (what a lock *is*: a key with a TTL, a session, a
+  row, an ephemeral node…)
+- how a lease or TTL is extended, and by whom
+- how the system detects a dead holder, and how fast
+- whether the waiters go into a queue, and in what sequence
+- whether a fencing token or an equivalent exists, and whether its
+  application is automatic or the task of the user
 
-### `## How monolock differs`
+### `## How monolock is different`
 
-Only the points of divergence with *this* competitor — not a retelling of the
-whole docs. Link out for details. Typical anchors: connection-scoped
-ownership (no release command to forget), client-chosen leases with
-RTT-aware heartbeats, FIFO queue with push promotion, fencing tokens on
-every grant, monotonic-time-only design, single-binary footprint, and the
-honest downside: no replication — a down server means no new acquisitions
-(`/start/introduction/`).
+Only the points of divergence with *this* competitor — not a repetition of
+the full documentation. Link out for details. Typical points:
+connection-scoped ownership (no release command that you can forget),
+client-selected leases with RTT-aware heartbeats, strict FIFO with push
+promotion, fencing tokens with each grant, monotonic time only, the
+single-binary footprint, and the honest disadvantage: no replication — when
+the server is down, new acquisitions are not possible
+(`/start/introduction/#what-monolock-is-not`).
+
+When the article mentions the fencing-token guarantee of monolock, keep the
+honest framing: the guarantee across restarts has documented conditions
+(`/concepts/fencing-tokens/#the-guarantees-bounds`), the probability of a
+failure is near zero, and the event that breaks it (a clock step to an
+earlier time around a restart) is a problem for the full system, not only
+for the lock.
 
 ### `## Side by side`
 
-Fixed rows, same order in every article, so readers can compare articles
-with each other. Keep cell text short; nuance goes in the prose above.
+Fixed rows, in the same sequence in each article, so that readers can
+compare the articles with each other. Keep the cell text short; the nuance
+goes in the prose above.
 
 | | monolock | <X> |
 | --- | --- | --- |
 | Ownership model | one TCP connection = one claim | … |
-| Dead-holder detection | silence for a client-chosen lease | … |
+| Detection of a dead holder | silence for a client-selected lease | … |
 | Queue / fairness | strict FIFO | … |
-| Fencing tokens | on every grant, monotonically increasing | … |
-| Handover latency | push; immediate on graceful exit, ≤ lease on crash | … |
+| Fencing tokens | with each grant, the number always increases | … |
+| Handover latency | push; immediate after a controlled stop, ≤ one lease after a crash | … |
 | Clock assumptions | monotonic durations only, no synchronized clocks | … |
-| Survives coordinator failure | no — single point of coordination | … |
-| Operational footprint | single static Go binary, stdlib only | … |
-| Extra infra needed | one small server | … |
+| Operation continues after a coordinator failure | no — single point of coordination | … |
+| Operational footprint | one static Go binary, stdlib only | … |
+| New infrastructure | one small server | … |
 
-### `## When to choose <X>`
+### `## When <X> is the correct selection`
 
-An honest bulleted list. This section is mandatory and must contain real
-reasons, not token ones — it is what makes the whole section trustworthy.
+An honest bulleted list. This section is mandatory. It must contain real
+reasons, not token ones — it makes the full article trustworthy.
 
-### `## When to choose monolock`
+### `## When monolock is the correct selection`
 
-Same format. Ground it in the actual target use cases: cron-style jobs,
-deploy mutexes, leader election that tolerates a brief coordination gap.
+The same format. Base it on the real target use cases: cron-style jobs,
+deploy mutexes, and leader election that accepts a short coordination gap.
 
 ### `## Sources`
 
-Bulleted links to primary sources used above.
+Bulleted links to the primary sources that the sections above use.

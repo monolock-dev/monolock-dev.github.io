@@ -3,188 +3,198 @@ title: "monolock vs PostgreSQL advisory locks"
 description: PostgreSQL advisory locks (pg_advisory_lock) as a distributed lock vs monolock — session vs connection ownership, PgBouncer pitfalls, dead-client detection, FIFO fairness, and fencing tokens.
 ---
 
-PostgreSQL advisory locks are the closest architectural relative monolock has:
-a single coordination point, no consensus, and ownership that dies with a
-connection. If you already run Postgres and your locking needs are modest,
-advisory locks are a perfectly good answer with zero new infrastructure. A
-separate lock server earns its place when you need string-named locks,
-per-lock failure detection measured in your own milliseconds, fair queues, and
-fencing tokens — none of which advisory locks provide.
+A PostgreSQL advisory lock is an entry in the lock table of the server. The
+database session that takes the lock is the owner. The lock stops when the
+session unlocks it or when the session ends. A monolock lock is a TCP
+connection. When the connection closes, the server releases the lock.
+
+The two designs are near relatives. Each has one coordination point, no
+consensus, and ownership that ends with a connection. Possibly you operate
+Postgres, and you need only some mutexes for jobs and migrations. Then
+advisory locks are a good solution, and no new infrastructure is necessary.
+But possibly you need string names, fast failure detection for each lock,
+fair queues, and fencing tokens. Advisory locks do not have these functions.
+monolock is made for this.
 
 ## Background
 
-Advisory locks have been in PostgreSQL since 8.2 (2006), when a new locking
-API replaced the old `contrib/userlock` module. The idea is older than most
-dedicated lock services: Postgres already has a battle-tested lock manager for
-rows and tables, so it exposes a corner of it for locks whose meaning the
-database does not know or care about — "advisory" because it is entirely up to
-the application to honor them.
+Advisory locks are a part of PostgreSQL since version 8.2 (2006). At that
+time, a new locking API replaced the old `contrib/userlock` module. The idea
+is simple. Postgres has a proven lock manager for rows and tables. It makes a
+part of this lock manager available for locks of the application. The name
+"advisory" tells you the rule. The application must obey the locks. The
+database does not.
 
-That heritage explains both their strength and their shape. The strength is
-that they cost nothing to adopt: no new daemon, no new port, no new failure
-mode. The famous argument — *you already run Postgres* — is genuinely strong
-here, because a lock is a small, transient thing that fits the lock manager
-perfectly. For a nightly job that must not run twice,
-`SELECT pg_try_advisory_lock(42)` is often the whole solution.
+This heritage gives advisory locks their strength and their shape. The
+strength: they cost nothing. No new daemon, no new port, and no new failure
+mode are necessary. The argument "you already operate Postgres" is strong
+here. For a nightly job that must not start two times,
+`SELECT pg_try_advisory_lock(42)` is frequently the full solution.
 
-The shape is that everything about them is inherited from the database rather
-than designed for distributed mutual exclusion. Locks are identified by
-numbers because the lock manager keys on fixed-size structs. Ownership follows
-the database session because that is the unit the backend tracks. Dead-client
-detection is whatever the TCP stack under the backend does. None of this is
-wrong — it is exactly what "reuse the lock manager" buys — but each inherited
-trait becomes a sharp edge once advisory locks are asked to coordinate a fleet
-of machines rather than a couple of app servers.
+The shape: each property comes from the database, not from a design for
+distributed mutual exclusion. The keys are numbers, because the lock manager
+uses structures with a fixed size. The owner is a database session, because
+the backend monitors sessions. The detection of a dead client is the behavior
+of the TCP stack. This is not incorrect. But each of these properties becomes
+a risk when advisory locks must coordinate many machines.
 
-The best-known sharp edge involves connection poolers. Session-level advisory
-locks belong to a *server* session, but under PgBouncer's transaction pooling
-a client's statements are spread across server connections — so the lock you
-took and the connection you are now talking on can silently be different
-sessions. PgBouncer's own feature matrix marks session-level advisory locks as
-**Never** working in transaction pooling mode — a well-documented footgun,
-since transaction pooling is the mode most people deploy PgBouncer in. The fix
-is transaction-level locks, which hold only as long as a transaction does.
+The best-known risk is a connection pooler. A session-level advisory lock is
+attached to a *server* session. But in the transaction pooling mode of
+PgBouncer, the statements of one client go through different server
+connections. Thus the session that holds your lock and the session that gets
+your subsequent statements can be different. The feature matrix of PgBouncer
+shows "Never" for session-level advisory locks in this mode. And transaction
+pooling is the usual mode for PgBouncer. The solution is transaction-level
+locks. These locks stay only for the duration of one transaction.
 
-So the honest framing is not "advisory locks are a lesser lock service." They
-are a free, solid lock primitive with database-shaped semantics. The question
-this page answers is what you get — and what you give up — by running a
-purpose-built lock server next to a database you already trust.
+Thus the correct summary is not "advisory locks are a bad lock service".
+They are a free and solid lock primitive with database semantics. This page
+shows what you get, and what you lose, with a special lock server adjacent
+to a database that you trust.
 
-## How PostgreSQL implements advisory locking
+## How PostgreSQL makes a lock
 
-A lock is an entry in the server's shared-memory lock table, identified by an
-application-chosen key: a single `bigint`, or a pair of `int4` values. There
-are **no string names**. If your locks have names, you hash them into the key
-space yourself, and two names hashing to the same 64 bits silently become the
-same lock — the collision is your problem, not the server's.
+**The key.** A lock is an entry in the lock table in the shared memory of
+the server. The application selects the key: one `bigint` value, or two
+`int4` values. There are **no string names**. If your locks have names, you
+must hash the names into the key space yourself. Two names with the same
+64-bit hash become the same lock, without a warning. This collision is your
+problem, not a problem of the server.
 
-Ownership comes in two scopes:
+**Session-level locks.** The functions `pg_advisory_lock` and
+`pg_try_advisory_lock` make these locks. The lock stays until you unlock it
+or until the session ends. These locks ignore transactions. A lock that you
+take in a transaction stays after a rollback. The requests also add up. If
+you lock the same key three times, you must unlock it three times. The
+function `pg_advisory_unlock_all` releases all the locks of a session. The
+server does this automatically at the end of a session, also after a
+disconnect that is not controlled. Thus a dead connection releases its locks
+— when the server sees that the connection is dead.
 
-- **Session-level** (`pg_advisory_lock`, `pg_try_advisory_lock`): held until
-  explicitly unlocked or the session ends. These locks deliberately ignore
-  transaction semantics — a lock taken inside a transaction survives its
-  rollback. Requests also *stack*: lock the same key three times and you must
-  unlock it three times. `pg_advisory_unlock_all` releases everything, and the
-  server invokes it implicitly at session end, even on an ungraceful
-  disconnect — so a dead connection does release its locks, once the server
-  notices the connection is dead.
-- **Transaction-level** (`pg_advisory_xact_lock`): released automatically at
-  transaction end, no manual unlock exists. The docs recommend this for
-  short-term use, and it is the only scope that is safe behind a
-  transaction-pooling PgBouncer.
+**Transaction-level locks.** The function `pg_advisory_xact_lock` makes
+these locks. The server releases the lock at the end of the transaction. A
+manual unlock is not possible. The documentation recommends this scope for
+short use. It is also the only scope that is safe behind PgBouncer in
+transaction pooling mode.
 
-**Dead-holder detection** is where the inherited shape shows most. There is no
-lease and no heartbeat protocol: a lock is freed when its session ends, and a
-session with a vanished client ends only when the server notices. The manual
-is explicit that the server detects a lost connection "only at the next
-interaction with the socket" — and a backend blocked waiting for the next
-query does not interact with the socket. What closes the gap is TCP-level
-plumbing: `tcp_keepalives_idle` / `_interval` / `_count` and
-`tcp_user_timeout`, all defaulting to the operating system's values (a Linux
-default keepalive starts probing after two hours of idleness), plus
-`idle_session_timeout` as a blunt application-level backstop — with its own
-documented warning about surprising poolers. All of these are server-wide
-knobs. Detection latency for a dead lock holder is a TCP tuning question
-answered once for every connection to the database, not a per-lock decision.
+**Detection of a dead holder.** There is no lease and no heartbeat protocol.
+A lock becomes free when its session ends. A session with a client that
+disappeared ends only when the server sees the problem. The manual is clear.
+The server finds a lost connection "only at the next interaction with the
+socket". A backend that waits for the subsequent query does not interact
+with the socket. TCP settings close this gap: `tcp_keepalives_idle`,
+`tcp_keepalives_interval`, `tcp_keepalives_count`, and `tcp_user_timeout`.
+Their default values come from the operating system. On Linux, the default
+keepalive probes start after two hours without traffic. The setting
+`idle_session_timeout` can also stop idle sessions. But its documentation
+contains a warning about the effect on poolers. All these settings apply to
+the full server. Thus the detection speed for a dead holder is a TCP
+question with one answer for all connections, not a selection for each lock.
 
-**Waiting**: `pg_advisory_lock` blocks until the lock is granted, and the
-blocked call returning *is* the notification — there is no separate push
-channel. The `try` variants return immediately. As for who gets the lock next,
-the manual documents blocking behavior but makes **no promise about the order
-in which waiters are granted** — there is no documented FIFO fairness across
-sessions for advisory locks.
+**The wait procedure.** The function `pg_advisory_lock` blocks until the
+server gives the lock. The return of the blocked call is the notification.
+There is no separate push channel. The `try` functions return immediately.
+The manual gives **no promise about the sequence of the waiters**. There is
+no documented FIFO fairness for advisory locks.
 
-**Fencing tokens**: none. A grant returns `void` (or a boolean for the `try`
-variants); nothing distinguishes this grant from the previous one, so a
-resource cannot tell a stale holder's write from the current holder's.
+**Fencing.** There are no fencing tokens. A grant returns `void`, or a
+boolean value for the `try` functions. Nothing makes one grant different
+from the earlier grant. Thus a resource cannot know a stale holder from the
+current holder.
 
-Two capacity facts round out the picture. Advisory locks live in a
-shared-memory pool sized by `max_locks_per_transaction × max_connections`,
-which caps total locks "typically in the tens to hundreds of thousands." And
-every *held* session-level lock requires a live database session — one backend
-process out of the finite `max_connections` pool, sitting mostly idle for as
-long as the lock is held. Backends are expensive, which is exactly why
-databases ration them; long-held locks spend that scarce resource on waiting.
+**Capacity.** Advisory locks use a pool in shared memory. The size of the
+pool is `max_locks_per_transaction × max_connections`. This limits the total
+number of locks, usually to tens or hundreds of thousands. Also, each
+session-level lock needs a live database session. This session is one
+backend process from the limited `max_connections` pool. The backend is
+mostly idle while the client holds the lock. Backends are expensive. This is
+the reason why databases limit them. A lock with a long life spends this
+limited resource on waiting.
 
-## How monolock differs
+## How monolock is different
 
-The models rhyme — ownership dies with a connection in both — so the
-differences are pointed rather than philosophical:
+The two models are similar. In each model, ownership ends with a connection.
+Thus the differences are precise, not philosophical:
 
-- **Names, not numbers.** monolock locks are raw UTF-8 strings up to 255
-  bytes. There is no client-side hashing step and no collision risk to reason
-  about.
-- **The connection is the claim — with a lease on top.** Postgres frees an
-  ungracefully dead session's locks *once it notices*; how fast is a
-  server-wide TCP question. In monolock every session picks its own lease in
-  `ACQUIRE`, heartbeats on an RTT-aware schedule derived from it, and a dead
-  holder is detected within that lease — milliseconds on a LAN if you ask for
-  that — per connection, no server tuning involved. See
-  [how it works](/concepts/how-it-works/).
-- **Strict FIFO with push promotion.** Waiters are promoted in arrival order,
-  and the server sends `ACQUIRED` on its own initiative the moment the
-  previous owner is gone — handover is one one-way trip. Postgres offers a
-  blocked call with unspecified ordering.
-- **Fencing tokens on every grant.** Each monolock grant carries a
-  monotonically increasing `uint64` so the guarded resource can reject stale
-  writers ([fencing tokens](/concepts/fencing-tokens/)). Advisory locks have
-  no equivalent; a paused holder that wakes up after losing its session writes
-  unchallenged.
-- **A lock costs a TCP connection, not a database backend.** monolock sessions
-  are cheap goroutine-backed connections, bounded by
-  [system resources](/concepts/capacity/) rather than a `max_connections`
-  budget shared with your queries.
-- **What monolock does *not* add: availability.** Neither system replicates
-  lock state. Advisory locks live in the primary's shared memory and are gone
-  after a failover; monolock is openly a single point of coordination — when
-  it is down, no new locks are granted (
-  [what monolock is not](/start/introduction/#what-monolock-is-not)). Postgres
-  does bring mature durability and HA machinery for your *data*, and reusing
-  it means one less process to run; monolock is one more binary, however
-  small.
+- **Names, not numbers.** monolock lock names are UTF-8 strings with a
+  maximum length of 255 bytes. There is no hash step on the client, and
+  there is no collision risk.
+- **The connection is the claim, with a lease.** Postgres frees the locks of
+  a dead session when it sees the problem. The speed is a server-wide TCP
+  question. In monolock, each session selects its own lease in the `ACQUIRE`
+  message. The client sends heartbeats on a schedule that includes the RTT.
+  The server detects a dead holder in a maximum of one lease — milliseconds
+  on a LAN, if you select that. Each connection makes this selection. No
+  server tuning is necessary ([how it works](/concepts/how-it-works/)).
+- **Strict FIFO with push promotion.** The server promotes the waiters in
+  the sequence of their arrival. When the owner is gone, the server sends
+  the `ACQUIRED` message immediately. The handover is one one-way message.
+  Postgres has a blocked call without a specified sequence.
+- **Fencing tokens with each grant.** Each monolock grant contains a
+  `uint64` number that always increases. The resource can reject stale
+  writers with one comparison
+  ([fencing tokens](/concepts/fencing-tokens/)). Advisory locks have no
+  equivalent function. A holder with a pause that lost its session writes
+  without a check.
+- **A lock costs a TCP connection, not a database backend.** monolock
+  sessions are light connections, each with one goroutine. The limit is the
+  [system resources](/concepts/capacity/), not a `max_connections` budget
+  that your queries also use.
+- **monolock does not add availability.** The two systems do not replicate
+  the lock state. Advisory locks are in the shared memory of the primary and
+  are gone after a failover. monolock is openly a single point of
+  coordination. When it is not available, new locks are not possible
+  ([what monolock is not](/start/introduction/#what-monolock-is-not)).
+  Postgres has mature durability and HA functions for your *data*. If you
+  use them, you operate one process less. monolock is one more binary, but
+  the binary is small.
 
 ## Side by side
 
 | | monolock | PostgreSQL advisory locks |
 | --- | --- | --- |
-| Ownership model | one TCP connection = one claim | database session (or transaction) holds an `int8`/two-`int4` key |
-| Dead-holder detection | silence for a client-chosen lease | session death, noticed via server-wide TCP keepalives / timeouts |
-| Queue / fairness | strict FIFO | blocked callers; no documented grant order |
-| Fencing tokens | on every grant, monotonically increasing | none |
-| Handover latency | push; immediate on graceful exit, ≤ lease on crash | blocked call returns on grant; crash noticed at TCP-tuning granularity |
-| Clock assumptions | monotonic durations only, no synchronized clocks | none for locking itself |
-| Survives coordinator failure | no — single point of coordination | no — lock state is primary-only shared memory |
-| Operational footprint | single static Go binary, stdlib only | a full PostgreSQL server (often already running) |
-| Extra infra needed | one small server | none, if Postgres is already there |
+| Ownership model | one TCP connection = one claim | a database session (or a transaction) holds an `int8` key or two `int4` keys |
+| Detection of a dead holder | silence for a client-selected lease | end of the session, seen through server-wide TCP keepalives and timeouts |
+| Queue / fairness | strict FIFO | blocked calls; no documented sequence |
+| Fencing tokens | with each grant, the number always increases | none |
+| Handover latency | push; immediate after a controlled stop, ≤ one lease after a crash | the blocked call returns at the grant; the server sees a crash at the speed of the TCP settings |
+| Clock assumptions | monotonic durations only, no synchronized clocks | none for the locks |
+| Operation continues after a coordinator failure | no — single point of coordination | no — the lock state is only in the shared memory of the primary |
+| Operational footprint | one static Go binary, stdlib only | a full PostgreSQL server (frequently already in operation) |
+| New infrastructure | one small server | none, if you operate Postgres |
 
-## When to choose PostgreSQL advisory locks
+## When PostgreSQL advisory locks are the correct selection
 
-- You already run Postgres and your locking needs are a handful of mutexes for
-  jobs and migrations — zero new infrastructure is a real, decisive advantage.
-- The lock guards work done *in that same database*: `pg_advisory_xact_lock`
-  inside the transaction ties the lock's life to the work's life exactly.
-- Your clients connect to Postgres directly or through session pooling, so the
-  session-ownership model holds without caveats.
-- Minutes-grade dead-holder detection is fine, or you already tune TCP
-  keepalives fleet-wide anyway.
-- You value that the primitive is 20 years old, exhaustively documented, and
-  operated by every DBA on earth.
+- You operate Postgres, and your locks are some mutexes for jobs and
+  migrations. Zero new infrastructure is a real and decisive advantage.
+- The lock protects work *in the same database*. `pg_advisory_xact_lock` in
+  the transaction attaches the life of the lock to the life of the work
+  exactly.
+- Your clients connect to Postgres directly, or through session pooling.
+  Then the session-ownership model operates without problems.
+- A detection of a dead holder in minutes is satisfactory. Or you already
+  tune the TCP keepalives for your full fleet.
+- It is important to you that the primitive is 20 years old, has full
+  documentation, and is known to each DBA.
 
-## When to choose monolock
+## When monolock is the correct selection
 
-- Locks are named after tenants, shards, or resources — real strings, many of
-  them — and hashing into 64 bits with silent collisions is not acceptable.
-- You need fast, per-lock failure detection: a deploy mutex or leader election
-  where a crashed holder must be replaced in seconds, chosen by the client
-  that knows its own network, not by a database-wide TCP setting.
-- Waiters must be served fairly and promoted instantly — cron-style jobs and
-  deploy queues where starvation or a thundering herd matters.
-- The guarded resource lives *outside* the database, so you want
-  [fencing tokens](/concepts/fencing-tokens/) to make stale writers reject
+- Your locks have the names of tenants, shards, or resources — real
+  strings, many of them. A hash into 64 bits with silent collisions is not
+  acceptable.
+- You need fast failure detection for each lock. Examples are a deploy
+  mutex or leader election, where the replacement of a crashed holder must
+  occur in seconds. The client that knows its own network makes this
+  selection, not a database-wide TCP setting.
+- The service of the waiters must be fair and immediate. Examples are cron
+  jobs and deploy queues, where starvation or many simultaneous retries are
+  a problem.
+- The resource that the lock protects is *outside* the database. You want
+  [fencing tokens](/concepts/fencing-tokens/), so that stale writers reject
   themselves.
-- Long-held locks would otherwise pin scarce Postgres backends, or your
-  connection path runs through transaction-pooling PgBouncer where
-  session-level advisory locks simply do not work.
+- Locks with a long life would keep limited Postgres backends busy. Or your
+  connection path goes through PgBouncer in transaction pooling mode, where
+  session-level advisory locks do not operate.
 
 ## Sources
 
